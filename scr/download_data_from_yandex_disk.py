@@ -95,7 +95,28 @@ def unpack_archive(path: Path, target_dir: Path) -> Optional[Path]:
 
     extract_dir.mkdir(parents=True, exist_ok=True)
     shutil.unpack_archive(path.as_posix(), extract_dir.as_posix())
+    flatten_duplicate_nested_dir(extract_dir)
     return extract_dir
+
+
+def flatten_duplicate_nested_dir(extract_dir: Path) -> None:
+    entries = list(extract_dir.iterdir())
+    if len(entries) != 1:
+        return
+
+    nested = entries[0]
+    if not nested.is_dir():
+        return
+
+    if nested.name.lower() != extract_dir.name.lower():
+        return
+
+    for item in nested.iterdir():
+        destination = extract_dir / item.name
+        if destination.exists():
+            raise RuntimeError(f"Cannot flatten nested dir, target already exists: {destination}")
+        shutil.move(item.as_posix(), destination.as_posix())
+    nested.rmdir()
 
 
 def main() -> None:

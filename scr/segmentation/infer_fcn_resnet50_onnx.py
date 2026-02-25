@@ -58,6 +58,8 @@ def main() -> None:
     ids = load_ids(split_file, args.limit)
     providers = resolve_providers(args.providers)
     session = ort.InferenceSession(args.model_path.as_posix(), providers=list(providers))
+    active_providers = session.get_providers()
+    print(f"Active providers: {active_providers}")
     input_name = session.get_inputs()[0].name
 
     infer_time = 0.0
@@ -76,7 +78,7 @@ def main() -> None:
         Image.fromarray(pred).save(args.predictions_dir / f"{image_id}.png")
 
     timing = {
-        "providers": list(providers),
+        "providers": list(active_providers),
         "images": len(ids),
         "warmup_images": args.warmup_images,
         "measured_inference_sec": infer_time,

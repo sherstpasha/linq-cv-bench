@@ -66,6 +66,8 @@ def main() -> None:
 
     providers = resolve_providers(args.providers)
     session = ort.InferenceSession(args.model_path.as_posix(), providers=list(providers))
+    active_providers = session.get_providers()
+    print(f"Active providers: {active_providers}")
     input_name = session.get_inputs()[0].name
 
     results: List[Dict] = []
@@ -114,7 +116,7 @@ def main() -> None:
         json.dump(results, f)
 
     timing = {
-        "providers": list(providers),
+        "providers": list(active_providers),
         "images": len(img_ids),
         "warmup_images": args.warmup_images,
         "detections": len(results),

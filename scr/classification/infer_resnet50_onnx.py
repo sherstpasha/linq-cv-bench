@@ -88,6 +88,8 @@ def main() -> None:
 
     providers = resolve_providers(args.providers)
     session = ort.InferenceSession(args.model_path.as_posix(), providers=list(providers))
+    active_providers = session.get_providers()
+    print(f"Active providers: {active_providers}")
     input_name = session.get_inputs()[0].name
 
     infer_time = 0.0
@@ -117,7 +119,7 @@ def main() -> None:
             total_images += len(keys)
 
     timing = {
-        "providers": list(providers),
+        "providers": list(active_providers),
         "images": total_images,
         "warmup_batches": args.warmup_batches,
         "measured_inference_sec": infer_time,
