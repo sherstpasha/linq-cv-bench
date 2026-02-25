@@ -24,8 +24,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run YOLOv5 ONNX inference on COCO and save predictions")
     parser.add_argument("--model-path", type=Path, default=REPO_ROOT / "experiments/detection/yolov5su.onnx")
-    parser.add_argument("--img-dir", type=Path, default=REPO_ROOT / "data/MSCOCO2017/val2017")
-    parser.add_argument("--ann-file", type=Path, default=REPO_ROOT / "data/MSCOCO2017/annotations/instances_val2017.json")
+    parser.add_argument("--img-dir", type=Path, default=REPO_ROOT / "data/evaluation/MSCOCO2017/val2017")
+    parser.add_argument("--ann-file", type=Path, default=REPO_ROOT / "data/evaluation/MSCOCO2017/annotations/instances_val2017.json")
     parser.add_argument("--predictions-out", type=Path, default=REPO_ROOT / "experiments/detection/predictions.json")
     parser.add_argument("--timing-out", type=Path, default=REPO_ROOT / "experiments/detection/inference_timing.json")
     parser.add_argument("--img-size", type=int, default=640)

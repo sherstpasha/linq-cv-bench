@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compute Top-1/Top-5 from predictions and ground truth")
     parser.add_argument("--predictions", type=Path, default=REPO_ROOT / "experiments/classification/predictions.jsonl")
-    parser.add_argument("--ground-truth", type=Path, default=REPO_ROOT / "data/imagenet/val_map.txt")
+    parser.add_argument("--ground-truth", type=Path, default=REPO_ROOT / "data/evaluation/imagenet/val_map.txt")
     parser.add_argument("--output-json", type=Path, default=REPO_ROOT / "experiments/classification/metrics.json")
     parser.add_argument("--ground-truth-offset", type=int, default=-1)
     return parser.parse_args()

@@ -9,6 +9,7 @@
 ## Run All ONNX Experiments
 ```bash
 source /Users/user/tomsk/.venv/bin/activate
+python /Users/user/tomsk/scr/split_datasets_for_calibration.py --force
 python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
   --python /Users/user/tomsk/.venv/bin/python
 ```
@@ -19,6 +20,15 @@ python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
   --python /Users/user/tomsk/.venv/bin/python \
   --experiments-dir /Users/user/tomsk/my_experiments
 ```
+
+Environment info is saved to:
+- `<experiments-dir>/environment.json`
+- `environment` section inside `<experiments-dir>/results_summary.json`
+
+Data split output:
+- `data/evaluation` (90%)
+- `data/calibration` (10%)
+- original source folders are removed by default (`--keep-originals` to keep them)
 
 ## Provider Hints
 - macOS Apple Silicon: `CoreMLExecutionProvider,CPUExecutionProvider`

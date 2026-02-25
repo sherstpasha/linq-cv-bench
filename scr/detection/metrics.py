@@ -14,7 +14,7 @@ METRIC_KEYS = [
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compute COCO bbox metrics from predictions JSON")
-    parser.add_argument("--ann-file", type=Path, default=REPO_ROOT / "data/MSCOCO2017/annotations/instances_val2017.json")
+    parser.add_argument("--ann-file", type=Path, default=REPO_ROOT / "data/evaluation/MSCOCO2017/annotations/instances_val2017.json")
     parser.add_argument("--predictions", type=Path, default=REPO_ROOT / "experiments/detection/predictions.json")
     parser.add_argument("--output-json", type=Path, default=REPO_ROOT / "experiments/detection/metrics.json")
     parser.add_argument("--limit", type=int, default=0)

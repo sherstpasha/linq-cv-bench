@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compute VOC segmentation metrics from predicted masks")
-    parser.add_argument("--voc-root", type=Path, default=REPO_ROOT / "data/VOCdevkit/VOC2012")
+    parser.add_argument("--voc-root", type=Path, default=REPO_ROOT / "data/evaluation/VOCdevkit/VOC2012")
     parser.add_argument("--split-file", type=Path, default=None)
     parser.add_argument("--predictions-dir", type=Path, default=REPO_ROOT / "experiments/segmentation/predictions")
     parser.add_argument("--output-json", type=Path, default=REPO_ROOT / "experiments/segmentation/metrics.json")

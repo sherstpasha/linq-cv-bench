@@ -25,6 +25,111 @@ def load_json(path: Path) -> Dict[str, Any]:
         return json.load(f)
 
 
+def collect_environment_info(py: str) -> Dict[str, Any]:
+    probe = r"""
+import importlib
+import importlib.metadata
+import json
+import os
+import platform
+import sys
+
+def safe_import(name):
+    try:
+        return importlib.import_module(name), None
+    except Exception as e:
+        return None, str(e)
+
+def pkg_version(name):
+    try:
+        return importlib.metadata.version(name)
+    except Exception:
+        return None
+
+onnxruntime, ort_err = safe_import("onnxruntime")
+torch, torch_err = safe_import("torch")
+
+gpu = {
+    "cuda_available": None,
+    "device_count": 0,
+    "devices": [],
+}
+if torch is not None:
+    try:
+        gpu["cuda_available"] = bool(torch.cuda.is_available())
+        if gpu["cuda_available"]:
+            gpu["device_count"] = int(torch.cuda.device_count())
+            for i in range(gpu["device_count"]):
+                props = torch.cuda.get_device_properties(i)
+                gpu["devices"].append(
+                    {
+                        "index": i,
+                        "name": torch.cuda.get_device_name(i),
+                        "total_memory_mb": int(props.total_memory // (1024 * 1024)),
+                        "compute_capability": f"{props.major}.{props.minor}",
+                    }
+                )
+    except Exception as e:
+        gpu["error"] = str(e)
+
+out = {
+    "python": {
+        "version": sys.version,
+        "version_info": list(sys.version_info[:3]),
+        "executable": sys.executable,
+    },
+    "platform": {
+        "system": platform.system(),
+        "release": platform.release(),
+        "version": platform.version(),
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+        "hostname": platform.node(),
+        "cpu_count": os.cpu_count(),
+    },
+    "packages": {
+        "onnxruntime": pkg_version("onnxruntime"),
+        "onnxruntime_gpu": pkg_version("onnxruntime-gpu"),
+        "torch": pkg_version("torch"),
+        "torchvision": pkg_version("torchvision"),
+        "ultralytics": pkg_version("ultralytics"),
+        "pycocotools": pkg_version("pycocotools"),
+    },
+    "onnxruntime": {
+        "available_providers": onnxruntime.get_available_providers() if onnxruntime else [],
+        "import_error": ort_err,
+    },
+    "gpu": gpu,
+    "env": {
+        "virtual_env": os.environ.get("VIRTUAL_ENV"),
+        "yolo_autoinstall": os.environ.get("YOLO_AUTOINSTALL"),
+    },
+    "import_errors": {
+        "torch": torch_err,
+        "onnxruntime": ort_err,
+    },
+}
+print(json.dumps(out))
+"""
+    proc = subprocess.run([py, "-c", probe], capture_output=True, text=True)
+    if proc.returncode != 0:
+        return {
+            "error": "failed to collect environment info",
+            "python": py,
+            "returncode": proc.returncode,
+            "stderr": proc.stderr.strip(),
+        }
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {
+            "error": "failed to parse environment info output",
+            "python": py,
+            "stdout": proc.stdout[-2000:],
+            "stderr": proc.stderr[-2000:],
+        }
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run ONNX classification + detection + segmentation and save one JSON")
     p.add_argument("--python", type=Path, default=None, help="Python interpreter for child scripts (default: current)")
@@ -44,6 +149,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--skip-detection-export", action="store_true")
     p.add_argument("--skip-segmentation-export", action="store_true")
     p.add_argument("--output-json", type=Path, default=None, help="Summary JSON path (default: <experiments-dir>/results_summary.json)")
+    p.add_argument(
+        "--environment-json",
+        type=Path,
+        default=None,
+        help="Environment JSON path (default: <experiments-dir>/environment.json)",
+    )
     return p.parse_args()
 
 
@@ -56,6 +167,11 @@ def ensure_module(py: str, module_name: str) -> None:
         )
 
 
+def ensure_path_exists(path: Path, hint: str) -> None:
+    if not path.exists():
+        raise RuntimeError(f"Missing required path: {path}. {hint}")
+
+
 def main() -> None:
     args = parse_args()
     os.environ["YOLO_AUTOINSTALL"] = "False"
@@ -64,6 +180,7 @@ def main() -> None:
     det_dir = exp_dir / "detection"
     seg_dir = exp_dir / "segmentation"
     output_json = args.output_json or (exp_dir / "results_summary.json")
+    environment_json = args.environment_json or (exp_dir / "environment.json")
 
     cls_model = cls_dir / "resnet50.onnx"
     cls_preds = cls_dir / "predictions.jsonl"
@@ -85,10 +202,20 @@ def main() -> None:
     print(f"VIRTUAL_ENV: {os.environ.get('VIRTUAL_ENV', '(not set)')}")
     print("YOLO_AUTOINSTALL: False")
     print(f"Experiments dir: {exp_dir}")
+    ensure_path_exists(REPO_ROOT / "data/evaluation/imagenet/val_map.txt", "Run split_datasets_for_calibration.py first.")
+    ensure_path_exists(
+        REPO_ROOT / "data/evaluation/MSCOCO2017/annotations/instances_val2017.json",
+        "Run split_datasets_for_calibration.py first.",
+    )
+    ensure_path_exists(
+        REPO_ROOT / "data/evaluation/VOCdevkit/VOC2012/ImageSets/Segmentation/val.txt",
+        "Run split_datasets_for_calibration.py first.",
+    )
     ensure_module(py, "onnxruntime")
     ensure_module(py, "torch")
     ensure_module(py, "ultralytics")
     ensure_module(py, "pycocotools")
+    environment = collect_environment_info(py)
 
     if not args.skip_classification_export:
         run([py, (SCR / "classification/export_resnet50_to_onnx.py").as_posix(), "--output", cls_model.as_posix()])
@@ -176,6 +303,7 @@ def main() -> None:
 
     summary = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "environment": environment,
         "classification": {
             "timing": load_json(cls_timing),
             "metrics": load_json(cls_metrics),
@@ -193,8 +321,12 @@ def main() -> None:
     output_json.parent.mkdir(parents=True, exist_ok=True)
     with output_json.open("w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
+    environment_json.parent.mkdir(parents=True, exist_ok=True)
+    with environment_json.open("w", encoding="utf-8") as f:
+        json.dump(environment, f, indent=2)
 
     print(f"Saved summary to: {output_json.as_posix()}")
+    print(f"Saved environment to: {environment_json.as_posix()}")
 
 
 if __name__ == "__main__":

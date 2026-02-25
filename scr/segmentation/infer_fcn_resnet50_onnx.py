@@ -17,7 +17,7 @@ IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run FCN-ResNet50 ONNX inference on VOC segmentation split")
     parser.add_argument("--model-path", type=Path, default=REPO_ROOT / "experiments/segmentation/fcn_resnet50.onnx")
-    parser.add_argument("--voc-root", type=Path, default=REPO_ROOT / "data/VOCdevkit/VOC2012")
+    parser.add_argument("--voc-root", type=Path, default=REPO_ROOT / "data/evaluation/VOCdevkit/VOC2012")
     parser.add_argument("--split-file", type=Path, default=None)
     parser.add_argument("--predictions-dir", type=Path, default=REPO_ROOT / "experiments/segmentation/predictions")
     parser.add_argument("--timing-out", type=Path, default=REPO_ROOT / "experiments/segmentation/inference_timing.json")

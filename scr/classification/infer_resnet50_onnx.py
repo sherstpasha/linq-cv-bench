@@ -49,7 +49,7 @@ def collate_fn(batch: List[Tuple[object, str]]):
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run ONNX ResNet50 inference and save predictions")
     parser.add_argument("--model-path", type=Path, default=REPO_ROOT / "experiments/classification/resnet50.onnx")
-    parser.add_argument("--data-dir", type=Path, default=REPO_ROOT / "data/imagenet")
+    parser.add_argument("--data-dir", type=Path, default=REPO_ROOT / "data/evaluation/imagenet")
     parser.add_argument("--predictions-out", type=Path, default=REPO_ROOT / "experiments/classification/predictions.jsonl")
     parser.add_argument("--timing-out", type=Path, default=REPO_ROOT / "experiments/classification/inference_timing.json")
     parser.add_argument("--batch-size", type=int, default=32)
