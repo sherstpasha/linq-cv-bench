@@ -18,6 +18,11 @@ python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
 - Linux/Windows with NVIDIA: `CUDAExecutionProvider,CPUExecutionProvider`
 - CPU only: `CPUExecutionProvider`
 
+Check available providers on current machine:
+```bash
+python /Users/user/tomsk/scr/list_onnx_providers.py
+```
+
 Example:
 ```bash
 python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
