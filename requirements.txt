@@ -1,0 +1,10 @@
+numpy
+onnx
+onnxruntime
+torch
+torchvision
+ultralytics
+pycocotools
+opencv-python
+Pillow
+tqdm
