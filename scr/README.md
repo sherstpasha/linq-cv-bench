@@ -13,6 +13,13 @@ python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
   --python /Users/user/tomsk/.venv/bin/python
 ```
 
+Custom experiments directory:
+```bash
+python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
+  --python /Users/user/tomsk/.venv/bin/python \
+  --experiments-dir /Users/user/tomsk/my_experiments
+```
+
 ## Provider Hints
 - macOS Apple Silicon: `CoreMLExecutionProvider,CPUExecutionProvider`
 - Linux/Windows with NVIDIA: `CUDAExecutionProvider,CPUExecutionProvider`
