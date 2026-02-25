@@ -13,7 +13,9 @@ SCR = REPO_ROOT / "scr"
 
 def run(cmd):
     print("$", " ".join(str(x) for x in cmd))
-    subprocess.run(cmd, check=True)
+    env = os.environ.copy()
+    env["YOLO_AUTOINSTALL"] = "False"
+    subprocess.run(cmd, check=True, env=env)
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -50,9 +52,11 @@ def ensure_module(py: str, module_name: str) -> None:
 
 def main() -> None:
     args = parse_args()
+    os.environ["YOLO_AUTOINSTALL"] = "False"
     py = str(args.python) if args.python else sys.executable
     print(f"Using Python: {py}")
     print(f"VIRTUAL_ENV: {os.environ.get('VIRTUAL_ENV', '(not set)')}")
+    print("YOLO_AUTOINSTALL: False")
     ensure_module(py, "onnxruntime")
     ensure_module(py, "torch")
     ensure_module(py, "ultralytics")

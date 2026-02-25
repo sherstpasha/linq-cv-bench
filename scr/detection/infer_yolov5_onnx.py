@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
@@ -10,6 +11,9 @@ import onnxruntime as ort
 import torch
 from pycocotools.coco import COCO
 from tqdm import tqdm
+
+os.environ.setdefault("YOLO_AUTOINSTALL", "False")
+
 from ultralytics.utils.nms import non_max_suppression
 
 from coco_utils import COCO80_TO_91, letterbox

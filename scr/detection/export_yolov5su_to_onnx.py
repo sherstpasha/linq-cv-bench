@@ -1,5 +1,8 @@
 import argparse
+import os
 from pathlib import Path
+
+os.environ.setdefault("YOLO_AUTOINSTALL", "False")
 
 from ultralytics import YOLO
 
