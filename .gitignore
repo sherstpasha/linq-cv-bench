@@ -35,4 +35,4 @@ pip-wheel-metadata/
 
 # Data
 data/
-experiments/
+experiments*/
