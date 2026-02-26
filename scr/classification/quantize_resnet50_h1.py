@@ -97,6 +97,27 @@ def map_tensor_name(name: str, mapping: Dict[str, str]) -> str:
     return mapping.get(name, name)
 
 
+def resolve_output_node_name_for_regular_model(graph_def: Any, requested_name: str) -> str:
+    node_names = {n.name for n in graph_def.node}
+    if requested_name in node_names:
+        return requested_name
+    if requested_name.endswith(":0"):
+        op_name = requested_name[:-2]
+        if op_name in node_names:
+            return op_name
+    else:
+        with_suffix = f"{requested_name}:0"
+        if with_suffix in node_names:
+            return with_suffix
+
+    # Fallback: choose last likely classification head.
+    candidates = [n.name for n in graph_def.node if "gemm" in n.name.lower() or "fc" in n.name.lower() or "logits" in n.name.lower()]
+    if candidates:
+        return candidates[-1]
+
+    raise KeyError(f"Output node '{requested_name}' not found in converted graph")
+
+
 def main() -> None:
     args = parse_args()
     if not args.model_path.exists():
@@ -117,6 +138,7 @@ def main() -> None:
 
     mapped_input = map_tensor_name(args.input_tensor_name, mapping)
     mapped_output = map_tensor_name(args.output_tensor_name, mapping)
+    regular_output_node = resolve_output_node_name_for_regular_model(graph_def, mapped_output)
 
     calibration_dict = build_calibration_dict(
         calibration_dir=args.calibration_dir,
@@ -125,13 +147,14 @@ def main() -> None:
     )
     calib_tensor = calibration_dict[mapped_input]
     print(f"Calibration tensor: {mapped_input} shape={tuple(calib_tensor.shape)}")
-    print(f"Output tensor: {mapped_output}")
+    print(f"Output tensor (mapped): {mapped_output}")
+    print(f"Output node (RegularModel): {regular_output_node}")
 
     input_shapes = {mapped_input: (1, 3, 224, 224)}
     model_kwargs = {
         "original_graph_def": graph_def,
         "input_shapes": input_shapes,
-        "output_nodes": [mapped_output],
+        "output_nodes": [regular_output_node],
     }
     if mapping:
         model_kwargs["anchors_mapping"] = mapping
