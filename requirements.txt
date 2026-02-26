@@ -1,6 +1,7 @@
 numpy
 onnx
-onnxruntime
+onnxruntime-gpu
+tensorflow
 torch
 torchvision
 ultralytics

@@ -14,6 +14,11 @@ python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
   --python /Users/user/tomsk/.venv/bin/python
 ```
 
+## H1 Smoke Test (No Calibration, Classification)
+```bash
+python /Users/user/tomsk/scr/classification/smoke_h1_classification_no_calibration.py
+```
+
 Custom experiments directory:
 ```bash
 python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
