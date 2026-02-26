@@ -112,6 +112,16 @@ def ensure_node_exists(graph_def: Any, node_name: str) -> None:
     )
 
 
+def unique(items: List[str]) -> List[str]:
+    seen = set()
+    out = []
+    for x in items:
+        if x and x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
+
 def print_graph_diagnostics(graph_def: Any) -> None:
     import tensorflow as tf  # type: ignore
 
@@ -195,19 +205,40 @@ def main() -> None:
     print(f"Mapped input/output: {mapped_input} -> {mapped_output}")
 
     input_shapes = {mapped_input: (1, 3, 224, 224)}
-    output_node = tensor_name_to_node_name(mapped_output)
-    ensure_node_exists(graph_def, output_node)
+    output_candidates = unique(
+        [
+            mapped_output,  # TF tensor name (from mapping)
+            tensor_name_to_node_name(mapped_output),  # TF op/node name
+            onnx_output_name,  # raw ONNX output id
+            f"{onnx_output_name}:0",
+        ]
+    )
 
-    model_kwargs = {
-        "original_graph_def": graph_def,
-        "input_shapes": input_shapes,
-        "output_nodes": [output_node],
-    }
-    if mapping:
-        model_kwargs["anchors_mapping"] = mapping
+    regular_model = None
+    selected_output = None
+    last_error: Exception | None = None
 
-    regular_model = RegularModel(**model_kwargs)
-    print(f"Output node (RegularModel): {output_node}")
+    for output_candidate in output_candidates:
+        model_kwargs = {
+            "original_graph_def": graph_def,
+            "input_shapes": input_shapes,
+            "output_nodes": [output_candidate],
+        }
+        if mapping:
+            model_kwargs["anchors_mapping"] = mapping
+        try:
+            regular_model = RegularModel(**model_kwargs)
+            selected_output = output_candidate
+            break
+        except Exception as e:
+            last_error = e
+
+    if regular_model is None:
+        raise RuntimeError(
+            f"Could not initialize RegularModel with outputs: {output_candidates}"
+        ) from last_error
+
+    print(f"Output node (RegularModel): {selected_output}")
 
     try:
         thresholds = regular_model.calibrate(calibration_data=calibration_dict, percentile=args.percentile)
