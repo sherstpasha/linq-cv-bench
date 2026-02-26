@@ -11,4 +11,8 @@ python /Users/user/tomsk/scr/classification/metrics.py
 ```bash
 python /Users/user/tomsk/scr/classification/quantize_resnet50_h1.py
 python /Users/user/tomsk/scr/classification/compile_resnet50_h1.py --preset O5
+python /Users/user/tomsk/scr/classification/infer_resnet50_h1_tpu.py
+python /Users/user/tomsk/scr/classification/metrics.py \
+  --predictions /Users/user/tomsk/experiments/classification/predictions_h1_tpu.jsonl \
+  --output-json /Users/user/tomsk/experiments/classification/metrics_h1_tpu.json
 ```
