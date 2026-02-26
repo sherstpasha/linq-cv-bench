@@ -62,6 +62,28 @@ def _ensure_tensor_name(name: str) -> str:
     return name if ":" in name else f"{name}:0"
 
 
+def _resolve_tensor_name(graph: Any, requested_name: str) -> str:
+    name = _ensure_tensor_name(requested_name)
+    try:
+        graph.get_tensor_by_name(name)
+        return name
+    except Exception:
+        pass
+
+    if ":" in name:
+        op_name, idx_str = name.rsplit(":", 1)
+        try:
+            requested_idx = int(idx_str)
+        except ValueError:
+            requested_idx = 0
+        op = graph.get_operation_by_name(op_name)
+        if op.outputs:
+            if requested_idx < len(op.outputs):
+                return f"{op_name}:{requested_idx}"
+            return f"{op_name}:0"
+    raise KeyError(f"Tensor not found: {requested_name}")
+
+
 def find_first_image(data_root: Path) -> Path:
     for path in sorted(data_root.rglob("*")):
         if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS:
@@ -76,8 +98,12 @@ def run_inference(graph_def: Any, input_tensor_name: str, output_tensor_name: st
     with graph.as_default():
         tf.graph_util.import_graph_def(graph_def, name="")
 
-    input_name = _ensure_tensor_name(input_tensor_name)
-    output_name = _ensure_tensor_name(output_tensor_name)
+    input_name = _resolve_tensor_name(graph, input_tensor_name)
+    output_name = _resolve_tensor_name(graph, output_tensor_name)
+    if input_name != _ensure_tensor_name(input_tensor_name):
+        print(f"Resolved input tensor: {input_tensor_name} -> {input_name}")
+    if output_name != _ensure_tensor_name(output_tensor_name):
+        print(f"Resolved output tensor: {output_tensor_name} -> {output_name}")
     input_tensor_ref = graph.get_tensor_by_name(input_name)
     output_tensor_ref = graph.get_tensor_by_name(output_name)
 
