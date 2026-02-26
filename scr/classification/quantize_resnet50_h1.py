@@ -1,4 +1,6 @@
 import argparse
+import math
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -19,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input-tensor-name", type=str, default=None, help="ONNX input tensor id (default: first ONNX input)")
     parser.add_argument("--output-tensor-name", type=str, default=None, help="ONNX output tensor id (default: first ONNX output)")
     parser.add_argument("--num-calibration-images", type=int, default=0, help="How many calibration images to use (0=all)")
+    parser.add_argument("--calibration-chunk-size", type=int, default=256, help="Images per preprocessing chunk")
     parser.add_argument("--percentile", type=float, default=100.0)
     parser.add_argument("--batch-axis", type=int, default=0)
     parser.add_argument("--save-quantized-graph-pb", type=Path, default=None, help="Optional .pb output from quantized model")
@@ -49,19 +52,40 @@ def preprocess_resnet50(image: Image.Image) -> np.ndarray:
     return arr.astype(np.float32)
 
 
-def build_calibration_dict(calibration_dir: Path, input_tensor_name: str, num_images: int) -> Dict[str, np.ndarray]:
+def build_calibration_tensor_memmap(
+    calibration_dir: Path,
+    num_images: int,
+    chunk_size: int,
+    tmp_dir: Path,
+) -> Tuple[np.memmap, Path]:
     images = list_images(calibration_dir)
     if not images:
         raise RuntimeError(f"No images found in calibration dir: {calibration_dir}")
     if num_images > 0:
         images = images[: min(num_images, len(images))]
 
-    tensors: List[np.ndarray] = []
-    for img_path in images:
-        with Image.open(img_path) as image:
-            tensors.append(preprocess_resnet50(image))
-    batch = np.stack(tensors, axis=0).astype(np.float32)  # NCHW
-    return {input_tensor_name: batch}
+    n = len(images)
+    if chunk_size <= 0:
+        raise RuntimeError("--calibration-chunk-size must be > 0")
+
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(prefix="calibration_", suffix=".dat", dir=tmp_dir.as_posix(), delete=False) as f:
+        memmap_path = Path(f.name)
+
+    batch = np.memmap(memmap_path.as_posix(), dtype=np.float32, mode="w+", shape=(n, 3, 224, 224))
+    total_chunks = math.ceil(n / chunk_size)
+    for chunk_idx in range(total_chunks):
+        start = chunk_idx * chunk_size
+        end = min(n, (chunk_idx + 1) * chunk_size)
+        print(f"Preprocess calibration chunk {chunk_idx + 1}/{total_chunks} ({start}:{end})")
+        tensors: List[np.ndarray] = []
+        for img_path in images[start:end]:
+            with Image.open(img_path) as image:
+                tensors.append(preprocess_resnet50(image))
+        batch[start:end] = np.stack(tensors, axis=0).astype(np.float32)
+        batch.flush()
+
+    return batch, memmap_path
 
 
 def load_converted_graph(onnx_model: Any) -> Tuple[Any, Dict[str, str]]:
@@ -194,69 +218,77 @@ def main() -> None:
     mapped_input = map_tensor_name(onnx_input_name, mapping)
     mapped_output = map_tensor_name(onnx_output_name, mapping)
 
-    calibration_dict = build_calibration_dict(
+    calib_tensor, memmap_path = build_calibration_tensor_memmap(
         calibration_dir=args.calibration_dir,
-        input_tensor_name=mapped_input,
         num_images=args.num_calibration_images,
+        chunk_size=args.calibration_chunk_size,
+        tmp_dir=args.output_qm.parent,
     )
-    calib_tensor = calibration_dict[mapped_input]
+    calibration_dict = {mapped_input: calib_tensor}
     print(f"Calibration tensor: {mapped_input} shape={tuple(calib_tensor.shape)}")
     print(f"ONNX input/output: {onnx_input_name} -> {onnx_output_name}")
     print(f"Mapped input/output: {mapped_input} -> {mapped_output}")
 
-    input_shapes = {mapped_input: (1, 3, 224, 224)}
-    output_candidates = unique(
-        [
-            mapped_output,  # TF tensor name (from mapping)
-            tensor_name_to_node_name(mapped_output),  # TF op/node name
-            onnx_output_name,  # raw ONNX output id
-            f"{onnx_output_name}:0",
-        ]
-    )
-
-    regular_model = None
-    selected_output = None
-    last_error: Exception | None = None
-
-    for output_candidate in output_candidates:
-        model_kwargs = {
-            "original_graph_def": graph_def,
-            "input_shapes": input_shapes,
-            "output_nodes": [output_candidate],
-        }
-        if mapping:
-            model_kwargs["anchors_mapping"] = mapping
-        try:
-            regular_model = RegularModel(**model_kwargs)
-            selected_output = output_candidate
-            break
-        except Exception as e:
-            last_error = e
-
-    if regular_model is None:
-        raise RuntimeError(
-            f"Could not initialize RegularModel with outputs: {output_candidates}"
-        ) from last_error
-
-    print(f"Output node (RegularModel): {selected_output}")
-
     try:
-        thresholds = regular_model.calibrate(calibration_data=calibration_dict, percentile=args.percentile)
-    except TypeError:
-        thresholds = regular_model.calibrate(calibration_data=calibration_dict)
-    quantized_model = regular_model.quantize(thresholds)
+        input_shapes = {mapped_input: (1, 3, 224, 224)}
+        output_candidates = unique(
+            [
+                mapped_output,  # TF tensor name (from mapping)
+                tensor_name_to_node_name(mapped_output),  # TF op/node name
+                onnx_output_name,  # raw ONNX output id
+                f"{onnx_output_name}:0",
+            ]
+        )
 
-    args.output_qm.parent.mkdir(parents=True, exist_ok=True)
-    quantized_model.save(file_dir=args.output_qm.parent.as_posix(), file_name=args.output_qm.name)
-    print(f"Saved quantized model: {args.output_qm}")
+        regular_model = None
+        selected_output = None
+        last_error: Exception | None = None
 
-    if args.save_quantized_graph_pb is not None:
-        quant_graph = quantized_model.as_graph(batch_size=1, batch_axis=args.batch_axis)
-        quant_graph_def = to_graph_def(quant_graph)
-        args.save_quantized_graph_pb.parent.mkdir(parents=True, exist_ok=True)
-        with args.save_quantized_graph_pb.open("wb") as f:
-            f.write(quant_graph_def.SerializeToString())
-        print(f"Saved quantized graph: {args.save_quantized_graph_pb}")
+        for output_candidate in output_candidates:
+            model_kwargs = {
+                "original_graph_def": graph_def,
+                "input_shapes": input_shapes,
+                "output_nodes": [output_candidate],
+            }
+            if mapping:
+                model_kwargs["anchors_mapping"] = mapping
+            try:
+                regular_model = RegularModel(**model_kwargs)
+                selected_output = output_candidate
+                break
+            except Exception as e:
+                last_error = e
+
+        if regular_model is None:
+            raise RuntimeError(
+                f"Could not initialize RegularModel with outputs: {output_candidates}"
+            ) from last_error
+
+        print(f"Output node (RegularModel): {selected_output}")
+
+        try:
+            thresholds = regular_model.calibrate(calibration_data=calibration_dict, percentile=args.percentile)
+        except TypeError:
+            thresholds = regular_model.calibrate(calibration_data=calibration_dict)
+        quantized_model = regular_model.quantize(thresholds)
+
+        args.output_qm.parent.mkdir(parents=True, exist_ok=True)
+        quantized_model.save(file_dir=args.output_qm.parent.as_posix(), file_name=args.output_qm.name)
+        print(f"Saved quantized model: {args.output_qm}")
+
+        if args.save_quantized_graph_pb is not None:
+            quant_graph = quantized_model.as_graph(batch_size=1, batch_axis=args.batch_axis)
+            quant_graph_def = to_graph_def(quant_graph)
+            args.save_quantized_graph_pb.parent.mkdir(parents=True, exist_ok=True)
+            with args.save_quantized_graph_pb.open("wb") as f:
+                f.write(quant_graph_def.SerializeToString())
+            print(f"Saved quantized graph: {args.save_quantized_graph_pb}")
+    finally:
+        try:
+            memmap_path.unlink(missing_ok=True)
+            print(f"Removed temporary calibration tensor: {memmap_path}")
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
