@@ -26,8 +26,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Path to input image (default: first image from data/evaluation/imagenet)",
     )
-    parser.add_argument("--input-tensor-name", type=str, default="input:1")
-    parser.add_argument("--output-tensor-name", type=str, default="logits:0")
+    parser.add_argument("--input-tensor-name", type=str, default="input:0")
+    parser.add_argument("--output-tensor-name", type=str, default=None, help="Output tensor name (default: auto)")
     parser.add_argument("--output-json", type=Path, default=None, help="Optional output JSON file")
     return parser.parse_args()
 
@@ -73,7 +73,9 @@ def _ensure_tensor_name(name: str) -> str:
     return name if ":" in name else f"{name}:0"
 
 
-def _resolve_tensor_name(graph: Any, requested_name: str) -> str:
+def _resolve_tensor_name(graph: Any, requested_name: Optional[str]) -> str:
+    if requested_name is None:
+        raise KeyError("Tensor name is not provided")
     name = _ensure_tensor_name(requested_name)
     try:
         graph.get_tensor_by_name(name)
@@ -143,7 +145,7 @@ def find_first_image(data_root: Path) -> Path:
 def run_inference(
     graph_def: Any,
     input_tensor_name: str,
-    output_tensor_name: str,
+    output_tensor_name: Optional[str],
     input_tensor: np.ndarray,
 ) -> Tuple[np.ndarray, str, str, List[Optional[int]]]:
     import tensorflow as tf  # imported lazily to keep script import light
@@ -153,14 +155,18 @@ def run_inference(
         tf.graph_util.import_graph_def(graph_def, name="")
 
     input_name = _resolve_tensor_name(graph, input_tensor_name)
-    try:
-        output_name = _resolve_tensor_name(graph, output_tensor_name)
-    except Exception:
+    if output_tensor_name is None:
         output_name = _guess_output_tensor_name(graph)
-        print(f"Resolved output tensor automatically: {output_tensor_name} -> {output_name}")
+        print(f"Resolved output tensor automatically: {output_name}")
+    else:
+        try:
+            output_name = _resolve_tensor_name(graph, output_tensor_name)
+        except Exception:
+            output_name = _guess_output_tensor_name(graph)
+            print(f"Resolved output tensor automatically: {output_tensor_name} -> {output_name}")
     if input_name != _ensure_tensor_name(input_tensor_name):
         print(f"Resolved input tensor: {input_tensor_name} -> {input_name}")
-    if output_name != _ensure_tensor_name(output_tensor_name):
+    if output_tensor_name is not None and output_name != _ensure_tensor_name(output_tensor_name):
         print(f"Resolved output tensor: {output_tensor_name} -> {output_name}")
     input_tensor_ref = graph.get_tensor_by_name(input_name)
     output_tensor_ref = graph.get_tensor_by_name(output_name)
