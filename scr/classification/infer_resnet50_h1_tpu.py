@@ -3,7 +3,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image
@@ -108,6 +108,8 @@ def pick_output(output_dict: Dict[str, np.ndarray], preferred_name: Optional[str
 
 
 def run_once(inference: object, input_name: str, x: np.ndarray) -> Dict[str, np.ndarray]:
+    if hasattr(inference, "run"):
+        return inference.run({input_name: x})  # type: ignore[attr-defined]
     return inference.sync({input_name: x})  # type: ignore[attr-defined]
 
 
@@ -124,10 +126,57 @@ def make_batch(tensors: List[np.ndarray], batch_size: int) -> np.ndarray:
     return np.concatenate([x, pad], axis=0)
 
 
-def resolve_runtime_input_name(inference: object, preferred_input: Optional[str], probe_x: np.ndarray) -> Tuple[str, Dict[str, np.ndarray]]:
+def _as_name_list(obj: Any) -> List[str]:
+    if isinstance(obj, str):
+        return [obj]
+    if isinstance(obj, dict):
+        return [str(k) for k in obj.keys()]
+    if isinstance(obj, (list, tuple, set)):
+        return [str(x) for x in obj]
+    return []
+
+
+def _collect_runtime_input_hints(inference: object, tpu_program: object) -> List[str]:
+    hints: List[str] = []
+    probes = [inference, tpu_program]
+    accessors = [
+        "input_names",
+        "inputs",
+        "get_input_names",
+        "get_inputs",
+        "tensor_descriptions",
+        "get_tensor_descriptions",
+    ]
+    for obj in probes:
+        for name in accessors:
+            if not hasattr(obj, name):
+                continue
+            attr = getattr(obj, name)
+            try:
+                value = attr() if callable(attr) else attr
+            except Exception:
+                continue
+            hints.extend(_as_name_list(value))
+    # Common names from vendor examples.
+    hints.extend(["input.1", "input", "input:0", "images", "Placeholder", "Placeholder:0"])
+    # Keep unique order.
+    uniq: List[str] = []
+    seen = set()
+    for x in hints:
+        if x and x not in seen:
+            seen.add(x)
+            uniq.append(x)
+    return uniq
+
+
+def resolve_runtime_input_name(
+    inference: object,
+    preferred_input: Optional[str],
+    probe_x: np.ndarray,
+    runtime_hints: List[str],
+) -> Tuple[str, Dict[str, np.ndarray]]:
     candidates = key_candidates(preferred_input)
-    # Generic fallbacks if scales are absent.
-    candidates += ["input:0", "input", "Placeholder:0", "Placeholder"]
+    candidates += runtime_hints
     tried = set()
     for name in candidates:
         if name in tried:
@@ -138,7 +187,11 @@ def resolve_runtime_input_name(inference: object, preferred_input: Optional[str]
             return name, out
         except Exception:
             continue
-    raise RuntimeError(f"Could not resolve input tensor name. Tried: {sorted(tried)}")
+    raise RuntimeError(
+        "Could not resolve input tensor name. "
+        f"Tried: {sorted(tried)}. "
+        "Pass --input-tensor-name explicitly if your program uses a custom input name."
+    )
 
 
 def main() -> None:
@@ -179,7 +232,9 @@ def main() -> None:
                 # Resolve runtime input/output names with first sample.
                 with Image.open(samples[0].path) as image:
                     probe_x = preprocess_resnet50(image)
-                runtime_input_name, probe_out = resolve_runtime_input_name(inference, preferred_input, probe_x)
+                runtime_hints = _collect_runtime_input_hints(inference, tpu_program)
+                print(f"Runtime input hints: {runtime_hints}")
+                runtime_input_name, probe_out = resolve_runtime_input_name(inference, preferred_input, probe_x, runtime_hints)
                 _ = pick_output(probe_out, preferred_output)
                 print(f"Resolved runtime input tensor: {runtime_input_name}")
                 if preferred_output:
