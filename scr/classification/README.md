@@ -10,4 +10,5 @@ python /Users/user/tomsk/scr/classification/metrics.py
 
 ```bash
 python /Users/user/tomsk/scr/classification/quantize_resnet50_h1.py
+python /Users/user/tomsk/scr/classification/compile_resnet50_h1.py --preset O5
 ```
