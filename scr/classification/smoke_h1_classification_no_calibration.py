@@ -76,12 +76,46 @@ def _resolve_tensor_name(graph: Any, requested_name: str) -> str:
             requested_idx = int(idx_str)
         except ValueError:
             requested_idx = 0
-        op = graph.get_operation_by_name(op_name)
+        try:
+            op = graph.get_operation_by_name(op_name)
+        except Exception as e:
+            raise KeyError(f"Operation not found for tensor {requested_name}: {op_name}") from e
         if op.outputs:
             if requested_idx < len(op.outputs):
                 return f"{op_name}:{requested_idx}"
             return f"{op_name}:0"
     raise KeyError(f"Tensor not found: {requested_name}")
+
+
+def _guess_output_tensor_name(graph: Any) -> str:
+    preferred_substrings = ("logits", "output", "pred", "prob", "softmax")
+    candidates = []
+    fallback = []
+
+    for op in graph.get_operations():
+        if op.type in ("Const", "Placeholder"):
+            continue
+        for t in op.outputs:
+            if t.dtype.name not in ("float32", "float64", "float16", "bfloat16"):
+                continue
+            name = t.name.lower()
+            shape = t.shape.as_list() if hasattr(t.shape, "as_list") else None
+            score = 0
+            if any(s in name for s in preferred_substrings):
+                score += 10
+            if shape and len(shape) >= 2 and (shape[-1] is None or shape[-1] >= 10):
+                score += 3
+            if op.type in ("Softmax", "Identity", "BiasAdd", "MatMul", "Reshape"):
+                score += 1
+            candidates.append((score, t.name))
+            fallback.append(t.name)
+
+    if candidates:
+        candidates.sort(key=lambda x: (x[0], x[1]))
+        return candidates[-1][1]
+    if fallback:
+        return fallback[-1]
+    raise RuntimeError("Could not auto-detect output tensor")
 
 
 def find_first_image(data_root: Path) -> Path:
@@ -99,7 +133,11 @@ def run_inference(graph_def: Any, input_tensor_name: str, output_tensor_name: st
         tf.graph_util.import_graph_def(graph_def, name="")
 
     input_name = _resolve_tensor_name(graph, input_tensor_name)
-    output_name = _resolve_tensor_name(graph, output_tensor_name)
+    try:
+        output_name = _resolve_tensor_name(graph, output_tensor_name)
+    except Exception:
+        output_name = _guess_output_tensor_name(graph)
+        print(f"Resolved output tensor automatically: {output_tensor_name} -> {output_name}")
     if input_name != _ensure_tensor_name(input_tensor_name):
         print(f"Resolved input tensor: {input_tensor_name} -> {input_name}")
     if output_name != _ensure_tensor_name(output_tensor_name):
