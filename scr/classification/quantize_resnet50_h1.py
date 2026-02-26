@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from PIL import Image
@@ -18,7 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-qm", type=Path, default=REPO_ROOT / "experiments/classification/resnet50_h1_quantized.qm")
     parser.add_argument("--input-tensor-name", type=str, default="input:0")
     parser.add_argument("--output-tensor-name", type=str, default="fc_Gemm_3/add:0")
-    parser.add_argument("--num-calibration-images", type=int, default=512, help="How many calibration images to use")
+    parser.add_argument("--num-calibration-images", type=int, default=0, help="How many calibration images to use (0=all)")
     parser.add_argument("--percentile", type=float, default=100.0)
     parser.add_argument("--batch-axis", type=int, default=0)
     parser.add_argument("--save-quantized-graph-pb", type=Path, default=None, help="Optional .pb output from quantized model")
@@ -64,15 +64,37 @@ def build_calibration_dict(calibration_dir: Path, input_tensor_name: str, num_im
     return {input_tensor_name: batch}
 
 
-def resolve_quantize_api() -> Any:
+def load_converted_graph(onnx_model: Any) -> Tuple[Any, Dict[str, str]]:
+    # Preferred import path from framework package.
     try:
-        import dnn_quant  # type: ignore
-
-        return dnn_quant
+        from tpu_framework import onnx_to_tf  # type: ignore
     except Exception:
-        from tpu_framework import dnn_quant  # type: ignore
+        from onnx_direct import onnx_to_tf  # type: ignore
 
-        return dnn_quant
+    try:
+        converted = onnx_to_tf(onnx_model=onnx_model, try_simplify=True)
+    except TypeError:
+        converted = onnx_to_tf(onnx_model)
+
+    if isinstance(converted, tuple):
+        tf_graph = converted[0]
+        mapping = converted[1] if len(converted) > 1 and isinstance(converted[1], dict) else {}
+        return tf_graph, mapping
+    return converted, {}
+
+
+def to_graph_def(graph_like: Any) -> Any:
+    import tensorflow as tf  # type: ignore
+
+    if isinstance(graph_like, tf.Graph):
+        return graph_like.as_graph_def()
+    if isinstance(graph_like, tf.compat.v1.GraphDef):
+        return graph_like
+    raise TypeError(f"Unsupported graph type: {type(graph_like)}")
+
+
+def map_tensor_name(name: str, mapping: Dict[str, str]) -> str:
+    return mapping.get(name, name)
 
 
 def main() -> None:
@@ -84,44 +106,54 @@ def main() -> None:
 
     try:
         import onnx
-        from onnx_direct import onnx_to_tf  # type: ignore
+        from tpu_framework import RegularModel  # type: ignore
     except Exception as e:
-        raise RuntimeError("Missing dependencies: onnx, onnx_direct") from e
-
-    dnn_quant = resolve_quantize_api()
+        raise RuntimeError("Missing dependencies: onnx and tpu_framework") from e
 
     print(f"Loading ONNX: {args.model_path}")
     onnx_model = onnx.load(args.model_path.as_posix())
-    converted = onnx_to_tf(onnx_model)
-    if isinstance(converted, tuple):
-        converted = converted[0]
+    converted_graph, mapping = load_converted_graph(onnx_model)
+    graph_def = to_graph_def(converted_graph)
+
+    mapped_input = map_tensor_name(args.input_tensor_name, mapping)
+    mapped_output = map_tensor_name(args.output_tensor_name, mapping)
 
     calibration_dict = build_calibration_dict(
         calibration_dir=args.calibration_dir,
-        input_tensor_name=args.input_tensor_name,
+        input_tensor_name=mapped_input,
         num_images=args.num_calibration_images,
     )
-    calib_tensor = calibration_dict[args.input_tensor_name]
-    print(f"Calibration tensor: {args.input_tensor_name} shape={tuple(calib_tensor.shape)}")
+    calib_tensor = calibration_dict[mapped_input]
+    print(f"Calibration tensor: {mapped_input} shape={tuple(calib_tensor.shape)}")
+    print(f"Output tensor: {mapped_output}")
 
-    quantized_model = dnn_quant.QuantizedModel.quantize(
-        original_graph_def=converted,
-        calibration_dict=calibration_dict,
-        input_shapes={args.input_tensor_name: (1, 3, 224, 224)},
-        output_nodes=[args.output_tensor_name],
-        percentile=args.percentile,
-        batch_axis=args.batch_axis,
-    )
+    input_shapes = {mapped_input: (1, 3, 224, 224)}
+    model_kwargs = {
+        "original_graph_def": graph_def,
+        "input_shapes": input_shapes,
+        "output_nodes": [mapped_output],
+    }
+    if mapping:
+        model_kwargs["anchors_mapping"] = mapping
+
+    regular_model = RegularModel(**model_kwargs)
+
+    try:
+        thresholds = regular_model.calibrate(calibration_data=calibration_dict, percentile=args.percentile)
+    except TypeError:
+        thresholds = regular_model.calibrate(calibration_data=calibration_dict)
+    quantized_model = regular_model.quantize(thresholds)
 
     args.output_qm.parent.mkdir(parents=True, exist_ok=True)
-    quantized_model.save(args.output_qm.as_posix())
+    quantized_model.save(file_dir=args.output_qm.parent.as_posix(), file_name=args.output_qm.name)
     print(f"Saved quantized model: {args.output_qm}")
 
     if args.save_quantized_graph_pb is not None:
-        graph_def = quantized_model.as_graph(batch_size=1, batch_axis=args.batch_axis)
+        quant_graph = quantized_model.as_graph(batch_size=1, batch_axis=args.batch_axis)
+        quant_graph_def = to_graph_def(quant_graph)
         args.save_quantized_graph_pb.parent.mkdir(parents=True, exist_ok=True)
         with args.save_quantized_graph_pb.open("wb") as f:
-            f.write(graph_def.SerializeToString())
+            f.write(quant_graph_def.SerializeToString())
         print(f"Saved quantized graph: {args.save_quantized_graph_pb}")
 
 
