@@ -1,0 +1,1789 @@
+
+
+===== PAGE 1 =====
+tpu_framework_30.1.0
+Release 30.1.0
+Lin-Q
+Jan 27, 2026
+
+===== PAGE 2 =====
+
+
+===== PAGE 3 =====
+CONTENTS:
+1 Overview 3
+2 System requirements 5
+3 Inference 7
+4 Python API 9
+4.1 Converter . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+4.2 Quantization . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+4.3 Compilation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12
+5 End-To-End Test 15
+6 Supported models 31
+7 Quick start 35
+8 Sub model 37
+9 Glossary of Terms 41
+9.1 General Artificial Intelligence and Neural Networks Terms . . . . . . . . . . . . . . . . . . . . . . . 41
+9.2 Tensor Processing Unit Speific Terms . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 44
+Python Module Index 47
+Index 49
+i
+
+===== PAGE 4 =====
+ii
+
+===== PAGE 5 =====
+tpu_framework_30.1.0, Release 30.1.0
+TPU Framework is a software package with tools to convert neural network model into a TPU inference program.
+CONTENTS: 1
+
+===== PAGE 6 =====
+tpu_framework_30.1.0, Release 30.1.0
+2 CONTENTS:
+
+===== PAGE 7 =====
+CHAPTER
+ONE
+OVERVIEW
+Supported input formats:
+• TensorFlow (native support) - instance oftf.compat.v1.GraphDef class,
+• ONNX (via built-in ONNX to TF converter) - instance ofonnx.ModelProtoclass.
+3
+
+===== PAGE 8 =====
+tpu_framework_30.1.0, Release 30.1.0
+4 Chapter 1. Overview
+
+===== PAGE 9 =====
+CHAPTER
+TWO
+SYSTEM REQUIREMENTS
+• GNU/Linux Ubuntu 18.04 LTS or newer;
+• Python 3.11.10;
+5
+
+===== PAGE 10 =====
+tpu_framework_30.1.0, Release 30.1.0
+6 Chapter 2. System requirements
+
+===== PAGE 11 =====
+CHAPTER
+THREE
+INFERENCE
+7
+
+===== PAGE 12 =====
+tpu_framework_30.1.0, Release 30.1.0
+8 Chapter 3. Inference
+
+===== PAGE 13 =====
+CHAPTER
+FOUR
+PYTHON API
+4.1 Converter
+class onnx_to_tf (onnx_model, input_shape=None,try_simplify=False,onnxsim_fixed_point_iters=100,
+keep_arrangement=None)
+Bases:
+Convert ONNX model to TF graph.
+Parameters
+• onnx_model(ModelProto) – onnx model
+• input_shape (Optional[Dict[str, List[int]]]) – mapping input name and shape
+• try_simplify(bool) – try to simplify the onnx model
+• keep_arrangement (Optional[Dict[str, Tuple[int, ...]]]) – keeping arrangement
+shape allows us to not transpose for better inference
+• onnxsim_fixed_point_iters (Optional[int])
+Return type
+TF graph and name mapping
+4.2 Quantization
+QuantizedModel performs operations of converting original model (onnx/tf) to quantized model(tf). Prepares data
+and configuration network for compiler
+class QuantizedModel
+Bases: ABC
+as_graph(batch_size=None,cache_word_length=128)
+Transforms quantized model to GraphDef
+Parameters
+• batch_size(Optional[int]) – Number of input samples. None by default
+• cache_word_length (int) – A parameter indicating for which cache word length the
+quantization is being done. 128 by default
+Return type
+Graph
+9
+
+===== PAGE 14 =====
+tpu_framework_30.1.0, Release 30.1.0
+static load (file_name)
+Parameters
+file_name (str)
+Return type
+_FileSystemMappedQuantizedModel
+rescale(data,direction=None)
+Parameters
+• data(Dict[str, ndarray[Any, dtype[Any]]])
+• direction (Optional[TpuDtype])
+save(file_dir,file_name=None,io_params_name='scales.json')
+Save the quantized model along file_path.
+Parameters
+• file_dir(str) – A dir path for dump.
+• file_name (str) – A file name of dump.
+• io_params_name (str) – A file name of scales and other parameters.
+Return type
+None
+class RegularModel (original_graph_def,input_shapes, output_nodes, anchors_mapping=None,
+percentile=100.0, operation_cfg=None,swish_layer_mode=None)
+Bases: object
+Parameters
+• original_graph_def (GraphDef)
+• input_shapes(Mapping[str, Tuple[Optional[int], ...]])
+• output_nodes(List[str])
+• anchors_mapping(Optional[Mapping[str, str]])
+• percentile(float)
+• operation_cfg (Optional[Mapping[str, str]])
+• swish_layer_mode (Optional[str])
+calibrate(calibration_data,save_output_histograms=False, debug_sample_number=0,save_dir='',
+original_model_statistic_filename=None)
+Calibratestheregularmodelbycalculatingoptimalthresholdsforeachlayerbasedontheprovidedcalibra-
+tiondataset. Themethodoptionallysavesoutputhistogramsandotherstatisticaldatatoanalyzeandrefine
+the calibration process.
+Parameters
+• calibration_data (Dict[str, AnyArray] ) – A dictionary of calibration data where
+keys are input tensor names and values are arrays of data samples used to determine quan-
+tization thresholds.
+• save_output_histograms (Optional[bool], default=False ) – If set to True, the
+method saves histograms of output activations for each layer. Useful for debugging and
+analyzing the calibration process.
+10 Chapter 4. Python API
+
+===== PAGE 15 =====
+tpu_framework_30.1.0, Release 30.1.0
+• debug_sample_number(Optional[int], default=0 )–Specifiesthenumberofsam-
+ples to use for debugging purposes. If set to 0, all calibration data samples are used.
+• save_dir(Optional[str], default= '')–Directorypathtosavecalibrationstatistics,
+histograms, and thresholds. If empty, no files are saved.
+• original_model_statistic_filename (Optional[str], default=None ) – File-
+name to save statistics related to the original model, enabling comparisons with the cal-
+ibrated model.
+Returns
+A dictionary of calculated quantization thresholds for each layer, where keys are layer names
+and values contain threshold details.
+Return type
+Dict[str, Any]
+Notes
+• ThemethodrunscalibrationwithoutGPUsupporttoavoidpotentialissuesduringthresholdcollection.
+• The thresholds calculated are based on the data provided, ensuring that each layer’s dynamic range is
+adjusted according to the calibration samples.
+• Output histograms, if enabled, provide a distributional view of activations, aiding in understanding
+where and how quantization might impact the model’s performance.
+static dump_thresholds (file_name,thresholds)
+Parameters
+• file_name (str)
+• thresholds(Dict[str, Any])
+Return type
+None
+fine_tune(thresholds,fine_tuning_data,fine_tuning_epochs=10, working_dir='')
+Fine-tunes the quantized model using adjustable thresholds to minimize the loss and optimize the model’s
+accuracy post-quantization. This method trains an adjustable network with given thresholds, then updates
+them based on training results.
+Parameters
+• thresholds (Dict[str, Any] ) – Initial quantization thresholds for model layers, pro-
+vided as a dictionary where keys represent layer names and values contain threshold pa-
+rameters for each layer.
+• fine_tuning_data (Dict[str, AnyArray] ) – A dictionary of fine-tuning datasets,
+where each key is a dataset name, and each value is an array-like object containing data
+samples for network fine-tuning.
+• fine_tuning_epochs (int, default=10 ) – The number of training epochs for fine-
+tuningthequantizedmodel. Moreepochstypicallyresultinbetteradjustmentbutincrease
+the computational cost.
+• working_dir (Optional[str], default= '') – Directory path for storing training logs
+andcheckpoints. ThemethodwillsaveTensorBoardlogsandmodelcheckpointsinsubdi-
+rectories within this path.
+4.2. Quantization 11
+
+===== PAGE 16 =====
+tpu_framework_30.1.0, Release 30.1.0
+Returns
+A dictionary containing updated thresholds for each layer, adjusted based on the best check-
+point achieved during training.
+Return type
+Dict[str, Any]
+Notes
+• Initializes aSoftwareNetworkwith adjustable quantization parameters for training.
+• Trains the adjustable network with the provided dataset, aiming to reduce loss.
+• The best model checkpoint, selected based on loss minimization, is used to update and return refined
+quantization thresholds.
+static load_thresholds (file_name)
+Parameters
+file_name (str)
+Return type
+Dict[str, Any]
+quantize(thresholds)
+Applies specified quantization thresholds to the model configuration and prepares the quantized model for
+TPUdeployment. Thismethodsetsupasoftwarerepresentationofthemodelwithprovidedthresholdsand
+returns an in-memory quantized model.
+Parameters
+thresholds(Dict[str, Any] )–Adictionaryspecifyingquantizationthresholdsforeach
+layer or operation, where keys represent layer names and values contain threshold data.
+Returns
+An in-memory quantized model configured with the applied thresholds, ready for execution
+on TPU or similar hardware.
+Return type
+InMemoryQuantizedModel
+Notes
+• Initializes aSoftwareNetworkto represent the model with the provided thresholds.
+• Extracts the adjusted configuration and data required for TPU compatibility.
+• Returns an instance ofInMemoryQuantizedModel with the TPU-compatible configuration and quan-
+tized weights, prepared for efficient hardware execution.
+4.3 Compilation
+Compiler performs compilation quantized model to TPU program.
+class compile_ (hardware_parameters,network, parameters,slicing_scheme=None)
+Bases:
+Parameters
+• hardware_parameters (ModelParameters)
+• network(Network)
+12 Chapter 4. Python API
+
+===== PAGE 17 =====
+tpu_framework_30.1.0, Release 30.1.0
+• parameters(CompileParameters)
+• slicing_scheme (Optional[Dict[str, Tuple[Dict[TensorAxis, Segment], ...]]])
+Return type
+Tuple[Executable, Dict[str, TensorDescription]]
+hardware_parameters(ModelParameters)
+Compiler supports various types of platform.get_hw_paramsuse for getting hardware_parameters of platform (E.g
+128x128_asic).
+class get_hw_params (tpu_type)
+Bases:
+Parameters
+tpu_type(str)
+Return type
+ModelParameters
+parameters(CompileParameters)
+Compiler supports two presets of parameters:
+O1 = CompileParameters(action_graph_data_transfer_optimization=True,
+dependency_resolution_algorithm=<DependencyResolutionAlgorithm.SEQUENTIAL: 1>,
+ram_io_balancing=<BalancingMode.NONE: 2>,
+shared_cache_schedule_optimizations=ScheduleOptimization(configurations=(IntermediateInsertion(depth=16,
+time_limit_seconds=240),), round_robin=False, fallthrough_patch=False),
+ewp_cache_schedule_optimizations=ScheduleOptimization(configurations=(),
+round_robin=False, fallthrough_patch=False),
+slicer=SubgraphSlicerParameters(analysis_depth=1, analysis_depth_branch=4,
+spatial_limit=2, max_cache_utilization=1), layer_fusion=0)
+Reasonably safe optimization that is considered to be a default one for the unknown network.
+O5 = CompileParameters(action_graph_data_transfer_optimization=True,
+dependency_resolution_algorithm=<DependencyResolutionAlgorithm.PARALLEL: 2>,
+ram_io_balancing=<BalancingMode.MIRROR: 1>,
+shared_cache_schedule_optimizations=ScheduleOptimization(configurations=(BiasScaleNegativeScaleAggressiveGrouping(depth=0,
+time_limit_seconds=-1), IntermediateInsertion(depth=-1, time_limit_seconds=-1)),
+round_robin=True, fallthrough_patch=True),
+ewp_cache_schedule_optimizations=ScheduleOptimization(configurations=(),
+round_robin=True, fallthrough_patch=True),
+slicer=SubgraphSlicerParameters(analysis_depth=10, analysis_depth_branch=4,
+spatial_limit=4, max_cache_utilization=0.5), layer_fusion=-1)
+O5 presets enables the following compilation optimizations:
+• Allow parallel execution of TPU’s pipelines (e.g. DTS subsystem may preload weights for the upcoming
+convolutional layers while ME subsystem computes current layer).
+• Use second DDR to load constants in parallel with both DTL0 and DTL1.
+• Allocatetensorsincachemoreefficiently: allowsometensorstobeallocatedinthesamebanksasothersif
+thatdoesnotdisruptexecution; pre-allocatespaceinadvancetoallowpre-loading; prolongtensorlifespan
+to delay it going out of scope thus allowing some pipelines to run longer without requiring cache to go to
+the next fixed state.
+• Enable layer fusion: if some subgraph A -> B computes in partial form as A1 & A2 and B1 and B2 it may
+be possible to compute B1 directly from A1 with no need for A2 to be calculated.
+4.3. Compilation 13
+
+===== PAGE 18 =====
+tpu_framework_30.1.0, Release 30.1.0
+• Layer slicer makes slicing schemes more flexible to allow more possible layer fusions.
+NOTE: compilation in O5 mode can sometimes yield invalid programs or take too long time to compile. If so,
+rollback to the O1 preset and submit a bug report.
+14 Chapter 4. Python API
+
+===== PAGE 19 =====
+CHAPTER
+FIVE
+END-TO-END TEST
+1 """
+2 TPU End-To-End Test
+3
+4 This file describes in full the process of TPU usage: from the original model
+5 (*.onnx file) to the inference on a given TPU device using ResNet-50 network
+6 as an example. File describes input model definition, quantization,
+7 compilation and execution on TPU in one sweep.
+8
+9 External prerequisites:
+10 * Original model (*.onnx file) with known input and output names
+11 * Portion of ImageNet dataset files (*.JPEG files)
+12 * Single demo image with a known class ("ground truth", .JPEG file)
+13
+14 Built-in prerequisites:
+15 * Predefined pre- and post- processing functions.
+16 """
+17 import argparse
+18 import glob
+19 import os
+20 import tempfile
+21 from typing import Any
+22 from typing import Callable
+23 from typing import Dict
+24 from typing import List
+25 from typing import Optional
+26 from typing import Tuple
+27
+28 import numpy as np
+29 import numpy.typing as npt
+30 import onnx
+31 import onnxruntime as ort
+32 import pytpu as tpu
+33 import tensorflow as tf
+34 from PIL import Image
+35
+36 from dnn_quant_tests.api_tests.torch_resnet50_quantization import OFFSET
+37 from tpu_framework import DEFAULT
+38 from tpu_framework import Network
+39 from tpu_framework import QuantizedModel
+40 from tpu_framework import RegularModel
+(continues on next page)
+15
+
+===== PAGE 20 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+41 from tpu_framework import TPU_128x128_PARAMS
+42 from tpu_framework import TpuProgram
+43 from tpu_framework import compiler
+44 from tpu_framework import onnx_to_tf
+45
+46 AnyArray = npt.NDArray[Any]
+47
+48 GRAPH_PATH = '/auto/tests/onnx_models/from_torchvision/torch_resnet50.onnx'
+49 GRAPH_NAME_FOR_SAVING = 'torch_resnet.pb'
+50
+51 """Original model - input ONNX *.onnx file:
+52
+53 $ stat /auto/tests/onnx_models/from_torchvision/torch_resnet50.onnx
+54 File: /auto/tests/onnx_models/from_torchvision/torch_resnet50.onnx
+55 Size: 102470371 Blocks: 200091 IO Block: 1048576 regular file
+56 Device: 63h/99d Inode: 1013050 Links: 1
+57 Access: (0777/-rwxrwxrwx) Uid: ( 100/systemd-network) Gid: ( 100/ users)
+58 Access: 2024-05-21 14:58:00.608628680 +0300
+59 Modify: 2021-03-23 16:55:02.000000000 +0300
+60 Change: 2023-12-08 17:00:17.352744356 +0300
+61 Birth: -
+62 """
+63
+64 IMAGENET_IMAGES_BASE_PATH = '/auto/datasets/imagenet/ILSVRC2012_img_val'
+65 """Path to dataset images:
+66
+67 $ ls -lh /auto/datasets/imagenet/ILSVRC2012_img_val/ | head
+68 total 13G
+69 -rwxrwxrwx 1 nobody mmp 107K Mar 7 2020 ILSVRC2012_val_00000001.JPEG
+70 -rwxrwxrwx 1 nobody mmp 138K Mar 7 2020 ILSVRC2012_val_00000002.JPEG
+71 -rwxrwxrwx 1 nobody mmp 120K Mar 7 2020 ILSVRC2012_val_00000003.JPEG
+72 -rwxrwxrwx 1 nobody mmp 83K Mar 7 2020 ILSVRC2012_val_00000004.JPEG
+73 -rwxrwxrwx 1 nobody mmp 128K Mar 7 2020 ILSVRC2012_val_00000005.JPEG
+74 -rwxrwxrwx 1 nobody mmp 148K Mar 7 2020 ILSVRC2012_val_00000006.JPEG
+75 -rwxrwxrwx 1 nobody mmp 162K Mar 7 2020 ILSVRC2012_val_00000007.JPEG
+76 -rwxrwxrwx 1 nobody mmp 105K Mar 7 2020 ILSVRC2012_val_00000008.JPEG
+77 """
+78
+79 DEMO_IMAGE_FILE_NAME = os.path.join(IMAGENET_IMAGES_BASE_PATH,
+80 'ILSVRC2012_val_00000045.JPEG')
+81 """Path to the demo input image with a known (expected) class"""
+82
+83 DEMO_IMAGE_EXPECTED_CLASS = 257
+84 """Expected label of the demo image"""
+85
+86 """BATCH SIZE"""
+87 _BATCH = 1
+88
+89 """RGB image has 3 channels"""
+90 _CHANNELS = 3
+91
+92 CALIBRATION_IMAGES = os.path.join(IMAGENET_IMAGES_BASE_PATH, "*.JPEG")
+(continues on next page)
+16 Chapter 5. End-To-End Test
+
+===== PAGE 21 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+93 """Path to read images used for calibration"""
+94
+95 INPUT_TENSOR_NAME = 'input.1'
+96 """Name of the input tensor name for the original model"""
+97
+98 OUTPUT_TENSOR_NAME = '495'
+99 """Name of the output tensor name of the original model"""
+100 """
+101 Name of the input or output tensor for the original model,
+102 In case of ONNX model this is a tensor id such as my_input or my_output,
+103 In case of TF model this is a tensor name such as
+104 my_input_placeholder:0 or my_output_tensor:0
+105 (note that this is NOT op name but tensor name, thus :0 suffix).
+106 """
+107
+108 _PREPROCESSING_HW = (224, 224)
+109 """Input size for preprocessing"""
+110
+111 THRESHOLDS_PATH = ( 'tpu_framework_tests/resources/'
+112 'torch_resnet50_thresholds.json')
+113
+114
+115 def crop_and_resize(image: Image.Image, hw: Tuple[int, int]) -> Image.Image:
+116 """Crop center from image and resize it to another shape."""
+117 return _central_crop(image, 0.85).resize(size=hw)
+118
+119
+120 def _central_crop(image: Image.Image, percent: float = 1.) -> Image.Image:
+121 """Crop center from image."""
+122 width, height = image.size
+123 min_dim = int(min(height, width) * percent)
+124 crop_top = (height - min_dim) // 2
+125 crop_left = (width - min_dim) // 2
+126 return image.crop(
+127 (crop_left, crop_top, crop_left + min_dim, crop_top + min_dim)
+128 )
+129
+130
+131 def div_255_sub_mean_div_std(
+132 tensor: npt.NDArray[np.float32]
+133 ) -> npt.NDArray[np.float32]:
+134 mean: npt.NDArray[np.float32] = np.array([0.485, 0.456, 0.406],
+135 dtype=np.float32)
+136 std: npt.NDArray[np.float32] = np.array([0.229, 0.224, 0.225],
+137 dtype=np.float32)
+138 tensor = (tensor / 255.0 - mean) / std
+139 return tensor
+140
+141
+142 def preprocess(image: Image.Image) -> npt.NDArray[np.float32]:
+143 """Preprocessing function to convert input image to input tensor.
+144 Supplied by the user alongside with the original model."""
+(continues on next page)
+17
+
+===== PAGE 22 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+145 image = crop_and_resize(image.convert( 'RGB'), _PREPROCESSING_HW)
+146 arr = div_255_sub_mean_div_std(np.asarray(image))
+147 arr = np.transpose(arr, (2, 0, 1)).astype(np.float32)
+148 return np.array([arr]).astype(np.float32)
+149
+150
+151 def postprocess(tensor: npt.NDArray[np.float32]) -> npt.NDArray[np.int32]:
+152 """Postprocessing function to convert output tensor to an interpretable
+153 entity (in this example to an index of a most probable class). Supplied
+154 by the user alongside with the original model."""
+155 # TODO: consider returning all 1000 classes sorted
+156
+157 # get index of the max
+158 max_index = np.array([np.argmax(tensor)], dtype=np.int32)
+159 return max_index + 1
+160
+161
+162 def _tensorflow_inference(graph_def: tf.compat.v1.GraphDef,
+163 *args: Any, **kwargs: Any) -> npt.NDArray[Any]:
+164 """Helper function for a single run of a TensorFlow session with a given
+165 graph_def; other args and kwargs are passed through."""
+166
+167 # Transform original model graph from GraphDef to tf.Graph
+168 graph = tf.graph_util.import_graph_def(graph_def)
+169
+170 with tf.compat.v1.Session(graph=graph) as sess:
+171 result: npt.NDArray[Any] = sess.run(*args, **kwargs)
+172 return result
+173
+174
+175 def _onnx_inference(
+176 onnx_graph: onnx.ModelProto,
+177 test_input_dict: Dict[str, npt.NDArray[np.float32]]
+178 ) -> Dict[str, npt.NDArray[Any]]:
+179 """Helper function for a single run of ONNX session with a given ModelProto
+180 instance."""
+181
+182 # Create onnxruntime session
+183 session = ort.InferenceSession(
+184 path_or_bytes=onnx_graph.SerializeToString(),
+185 providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+186 )
+187 return {OUTPUT_TENSOR_NAME: session.run([OUTPUT_TENSOR_NAME],
+188 input_feed=test_input_dict)[0]}
+189
+190
+191 def _read_original_onnx_model() -> onnx.ModelProto:
+192 """Load original onnx model graph from a predefined location."""
+193 serialized_graph = onnx.load(GRAPH_PATH)
+194
+195 return serialized_graph
+196
+(continues on next page)
+18 Chapter 5. End-To-End Test
+
+===== PAGE 23 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+197
+198 def _convert_onnx_to_tf_graphdef(
+199 onnx_graph: onnx.ModelProto
+200 ) -> Tuple[tf.compat.v1.GraphDef, Dict[str, str]]:
+201 """Convert original onnx model to tensorflow GraphDef."""
+202 tf_graph, onnx_tensor_id_to_tf_tensor_name = onnx_to_tf(
+203 onnx_graph,
+204 None,
+205 try_simplify=True
+206 )
+207
+208 original_graph_def = tf_graph.as_graph_def()
+209
+210 return original_graph_def, onnx_tensor_id_to_tf_tensor_name
+211
+212
+213 def _load_test_input_tensor_dict() -> Dict[str, npt.NDArray[np.float32]]:
+214 """Load a dictionary of input data (key is the name of model input and the
+215 value is an input tensor)."""
+216
+217 # Load test image:
+218 with Image.open(DEMO_IMAGE_FILE_NAME) as demo_image:
+219 # NOTE: input image is PIL image `demo_image` but the input **tensor**
+220 # is pre-processed input image:
+221 return {INPUT_TENSOR_NAME: preprocess(demo_image)}
+222
+223
+224 def _load_test_samples_for_calibration_or_finetune(
+225 number_of_samples: int
+226 ) -> Dict[str, npt.NDArray[np.float32]]:
+227 """Load tensors used to calibrate network during quantization procedure."""
+228
+229 # Prepare calibration tensors:
+230 calibration_tensor_list = []
+231
+232 calibration_images = glob.glob(CALIBRATION_IMAGES)[:number_of_samples]
+233
+234 # Convert calibration images to a calibration tensor:
+235 for image_path in calibration_images:
+236 with Image.open(image_path) as image:
+237 tensor = preprocess(image)
+238 calibration_tensor_list.append(tensor)
+239
+240 # Each element of calibration_tensor_list is of shape NHWC,
+241 # concat with batch axis = 0:
+242 calib_tensor = np.concatenate(
+243 calibration_tensor_list,
+244 axis=0,
+245 dtype=np.float32,
+246 )
+247
+248 return {INPUT_TENSOR_NAME: calib_tensor}
+(continues on next page)
+19
+
+===== PAGE 24 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+249
+250
+251 def _test_original_onnx_model(
+252 onnx_graph: onnx.ModelProto,
+253 test_input_dict: Dict[str, npt.NDArray[np.float32]],
+254 ) -> None:
+255 """Check original ONNX model behaviour with a test run using onnxruntime"""
+256
+257 # Check inference with the original model:
+258 original_graph_output_dict = _onnx_inference(
+259 onnx_graph=onnx_graph,
+260 test_input_dict=test_input_dict
+261 )
+262
+263 # Check that the original model behaves as expected:
+264 _assert_output_dictionary(
+265 original_graph_output_dict,
+266 'Original ONNX model '
+267 )
+268
+269
+270 def _test_converted_tf_model(
+271 converted_model_graph_def: tf.compat.v1.GraphDef,
+272 test_input_dict: Dict[str, npt.NDArray[np.float32]],
+273 onnx_tensor_id_to_tf_tensor_name: Dict[str, str]) -> None:
+274 """Check original model behaviour with a test run using tensorflow."""
+275
+276 renamed_input_dict = {
+277 onnx_tensor_id_to_tf_tensor_name[key]: value
+278 for key, value in test_input_dict.items()
+279 }
+280 # Check inference with the original model:
+281 converted_graph_output_tensors = _tensorflow_inference(
+282 graph_def=converted_model_graph_def,
+283 feed_dict=renamed_input_dict,
+284 fetches=onnx_tensor_id_to_tf_tensor_name[OUTPUT_TENSOR_NAME]
+285 )
+286
+287 # For convenience al inputs and outputs are stored as dictionaries
+288 # (key is the name of the tensor):
+289 original_graph_output_dict = {
+290 OUTPUT_TENSOR_NAME: converted_graph_output_tensors
+291 }
+292
+293 # Check that the original model behaves as expected:
+294 _assert_output_dictionary(
+295 original_graph_output_dict,
+296 'Converted model ')
+297
+298
+299 def _test_quantized_model(
+300 quantized_model: QuantizedModel,
+(continues on next page)
+20 Chapter 5. End-To-End Test
+
+===== PAGE 25 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+301 test_input_dict: Dict[str, npt.NDArray[np.float32]],
+302 onnx_tensor_id_to_tf_tensor_name: Dict[str, str],
+303 cache_word_length: int,
+304 ) -> None:
+305 """Check quantized model behaviour with a test run using tensorflow."""
+306
+307 renamed_input_dict = {
+308 onnx_tensor_id_to_tf_tensor_name[key]: value
+309 for key, value in test_input_dict.items()
+310 }
+311
+312 # Quantized model stores information internally in custom format;
+313 # obtain reference TensorFlow implementation:
+314 quantized_model_graph_def = quantized_model.as_graph(
+315 # NOTE: quantized model is batch-sensitive
+316 # (multiple images can be fed to the input of the model)
+317 batch_size=1,
+318
+319 # NOTE: quantized model is CWL-sensitive
+320 cache_word_length=cache_word_length,
+321 ).as_graph_def()
+322
+323 # Input quantization is the multiplication of the input data by the
+324 # quantization scaling factor, and then casting to the desired data type
+325 input_dict = quantized_model.rescale(renamed_input_dict)
+326
+327 # Perform test run using tensorflow:
+328 output_tensor = _tensorflow_inference(
+329 graph_def=quantized_model_graph_def,
+330 feed_dict=input_dict,
+331 fetches=onnx_tensor_id_to_tf_tensor_name[OUTPUT_TENSOR_NAME]
+332 )
+333
+334 # Output de-quantization is the multiplication of the input data by the
+335 # quantization scaling factor, and then casting to float32
+336 output_tensor = quantized_model.rescale(
+337 {onnx_tensor_id_to_tf_tensor_name[OUTPUT_TENSOR_NAME]: output_tensor}
+338 )
+339
+340 original_output_tensor = {
+341 OUTPUT_TENSOR_NAME: output_tensor[
+342 onnx_tensor_id_to_tf_tensor_name[OUTPUT_TENSOR_NAME]
+343 ]
+344 }
+345
+346 # Check that quantized model behaves as expected:
+347 _assert_output_dictionary(
+348 original_output_tensor,
+349 'Quantized model '
+350 )
+351
+352
+(continues on next page)
+21
+
+===== PAGE 26 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+353 def _test_tlm_program(
+354 tlm_program: Any,
+355 test_input_dict: Dict[str, npt.NDArray[np.float32]]
+356 ) -> None:
+357 """This is an internal debug function run inference procedure using TLM.
+358 # ========================================================================#
+359 # NOTE: TLM disclaimer: Testing on a TLM model is an internal debug tool.
+360 # TLM packages are not distributed in production and are unavailable to the
+361 # public. Presence of TLM testing in this file guarantees internal
+362 # consistency of test system and must be ignored by any external users
+363 # unless explicitly mentioned by developers.
+364 # ========================================================================#
+365 """
+366
+367 from tpu_compiler_tests.tools.py_model_wrapper import model_execute
+368
+369 executable, tensor_descriptions = tlm_program
+370
+371 # Replace tensor names with op names:
+372 test_input_dict_with_op_names = {
+373 tensor_name: tensor_value
+374 for tensor_name, tensor_value in test_input_dict.items()
+375 }
+376
+377 # Execute on TLM:
+378 tlm_result = model_execute(
+379 executable=executable,
+380 tensor_descriptions=tensor_descriptions,
+381 input_data=test_input_dict_with_op_names,
+382 )
+383
+384 print('TLM estimates execution time: ', tlm_result.execution_time_us, 'us')
+385
+386 _assert_output_dictionary(tlm_result.output_data, 'TLM')
+387
+388
+389 def _assert_output_dictionary(
+390 output_dict: Dict[str, npt.NDArray[np.float32]],
+391 executor_name: str
+392 ) -> None:
+393 """Examine given dictionary and check that it is a valid model output
+394 (correct class is predicted)."""
+395
+396 # Get most probable class (prediction):
+397 most_probable_class = postprocess(output_dict[OUTPUT_TENSOR_NAME])
+398
+399 # Log results:
+400 print(f'{executor_name} reports most probable class estimate: '
+401 f' {most_probable_class}')
+402
+403 # Print some more debug information about executor 's output to emphasize
+404 # possible differences between outputs of various executors:
+(continues on next page)
+22 Chapter 5. End-To-End Test
+
+===== PAGE 27 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+405 argsort_top = (np.flip(np.argsort(output_dict[OUTPUT_TENSOR_NAME][0]))[:16]
+406 + OFFSET)
+407 print(f'{executor_name} TOP-16 argsort output is: {argsort_top}')
+408
+409 # Assert valid prediction
+410 if most_probable_class != DEMO_IMAGE_EXPECTED_CLASS:
+411 raise AssertionError(
+412 f'Executor " {executor_name}" predicted wrong class '
+413 f' {most_probable_class}'
+414 f' (expected class is {DEMO_IMAGE_EXPECTED_CLASS})'
+415 )
+416
+417
+418 # NOTE: How to quantize original model
+419 # There are 4 ways:
+420 # 1. With calibration
+421
+422
+423 def quantization_with_calib(
+424 graph_def: tf.compat.v1.GraphDef,
+425 input_shapes: Dict[str, Tuple[int, ...]],
+426 output_nodes: List[str],
+427 anchors_mapping: Dict[str, str],
+428 ) -> QuantizedModel:
+429 # Get calibration tensors:
+430 calibration_dict = _load_test_samples_for_calibration_or_finetune(
+431 number_of_samples=2
+432 )
+433 calibration_dict_with_mapping = {
+434 anchors_mapping[k]: v for k, v in calibration_dict.items()
+435 }
+436
+437 regular_model = RegularModel(
+438 original_graph_def=graph_def,
+439 input_shapes=input_shapes,
+440 output_nodes=output_nodes,
+441 anchors_mapping=anchors_mapping
+442 )
+443
+444 thresholds = regular_model.calibrate(calibration_dict_with_mapping)
+445
+446 quantized_model = regular_model.quantize(thresholds)
+447
+448 return quantized_model
+449
+450
+451 # # 2. With early prepared thresholds (from previous fine_tuning stage)
+452
+453 def quantization_with_thresholds(
+454 graph_def: tf.compat.v1.GraphDef,
+455 input_shapes: Dict[str, Tuple[int, ...]],
+456 output_nodes: List[str],
+(continues on next page)
+23
+
+===== PAGE 28 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+457 anchors_mapping: Dict[str, str],
+458 ) -> QuantizedModel:
+459 thresholds = RegularModel.load_thresholds(THRESHOLDS_PATH)
+460
+461 regular_model = RegularModel(
+462 original_graph_def=graph_def,
+463 input_shapes=input_shapes,
+464 output_nodes=output_nodes,
+465 anchors_mapping=anchors_mapping
+466 )
+467 quantized_model = regular_model.quantize(thresholds)
+468
+469 return quantized_model
+470
+471
+472 # # 3. With early prepared thresholds and new fine_tuning stage
+473
+474 def quantization_with_thresholds_and_finetune(
+475 graph_def: tf.compat.v1.GraphDef,
+476 input_shapes: Dict[str, Tuple[int, ...]],
+477 output_nodes: List[str],
+478 anchors_mapping: Dict[str, str],
+479 ) -> QuantizedModel:
+480 thresholds = RegularModel.load_thresholds(THRESHOLDS_PATH)
+481 fine_tuning_dict = _load_test_samples_for_calibration_or_finetune(
+482 number_of_samples=50
+483 )
+484 fine_tuning_dict_with_mapping = {
+485 anchors_mapping[k]: v for k, v in fine_tuning_dict.items()
+486 }
+487
+488 regular_model = RegularModel(
+489 original_graph_def=graph_def,
+490 input_shapes=input_shapes,
+491 output_nodes=output_nodes,
+492 anchors_mapping=anchors_mapping
+493 )
+494 new_thresholds = regular_model.fine_tune(
+495 thresholds=thresholds,
+496 fine_tuning_epochs=10,
+497 fine_tuning_data=fine_tuning_dict_with_mapping,
+498 working_dir='training',
+499 )
+500 quantized_model = regular_model.quantize(new_thresholds)
+501
+502 return quantized_model
+503
+504
+505 # # 4. With calibration and new fine_tuning stage
+506
+507
+508 def quantization_with_calib_and_finetune(
+(continues on next page)
+24 Chapter 5. End-To-End Test
+
+===== PAGE 29 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+509 graph_def: tf.compat.v1.GraphDef,
+510 input_shapes: Dict[str, Tuple[int, ...]],
+511 output_nodes: List[str],
+512 anchors_mapping: Dict[str, str],
+513 ) -> QuantizedModel:
+514 # Get fine_tuning tensors:
+515 fine_tuning_dict = _load_test_samples_for_calibration_or_finetune(
+516 number_of_samples=50
+517 )
+518 fine_tuning_dict_with_mapping = {
+519 anchors_mapping[k]: v for k, v in fine_tuning_dict.items()
+520 }
+521
+522 # Get calibration tensors:
+523 calibration_dict = _load_test_samples_for_calibration_or_finetune(
+524 number_of_samples=2
+525 )
+526 calibration_dict_with_mapping = {
+527 anchors_mapping[k]: v for k, v in calibration_dict.items()
+528 }
+529
+530 regular_model = RegularModel(
+531 original_graph_def=graph_def,
+532 input_shapes=input_shapes,
+533 output_nodes=output_nodes,
+534 anchors_mapping=anchors_mapping
+535 )
+536 thresholds = regular_model.calibrate(calibration_dict_with_mapping)
+537
+538 new_thresholds = regular_model.fine_tune(
+539 thresholds=thresholds,
+540 fine_tuning_epochs=10,
+541 fine_tuning_data=fine_tuning_dict_with_mapping,
+542 working_dir='training',
+543 )
+544 quantized_model = regular_model.quantize(new_thresholds)
+545
+546 return quantized_model
+547
+548
+549 def test_end_to_end(
+550 quant_function: Callable[
+551 [
+552 tf.compat.v1.GraphDef,
+553 Dict[str, Tuple[int, ...]],
+554 List[str],
+555 Dict[str, str]
+556 ],
+557 QuantizedModel
+558 ],
+559 enable_tlm_execution: bool,
+560 enable_tpu_execution: bool,
+(continues on next page)
+25
+
+===== PAGE 30 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+561 enable_tpu_raw_mode: bool,
+562 save_graph_path: Optional[str],
+563 ) -> None:
+564 """Demonstrates a complete flow from the original model through
+565 quantization and compilation to TPU execution"""
+566
+567 # Load test input data:
+568 test_input_dict = _load_test_input_tensor_dict()
+569
+570 # User supplies original model in form an instance of tensorflow class,
+571 # in this example we load it from a file:
+572 onnx_original_model = _read_original_onnx_model()
+573
+574 # Demonstrate that original onnx model works:
+575 _test_original_onnx_model(onnx_original_model, test_input_dict)
+576 graph_def, onnx_tensor_id_to_tf_tensor_name = _convert_onnx_to_tf_graphdef(
+577 onnx_original_model
+578 )
+579
+580 # NOTE: if we have tf model, then can skip steps connected with onnx above.
+581 # All we have to do instead:
+582 # 1) load tf model:
+583 # with tf.compat.v1.io.gfile.GFile(GRAPH_PATH, 'rb') as file:
+584 # file_data = file.read()
+585 # original_graph_def = tf.compat.v1.GraphDef()
+586 # original_graph_def.ParseFromString(file_data)
+587 # _nodes = [n.name + ":0" for n in serialized_graph.node]
+588 # onnx_tensor_id_to_tf_tensor_name = {name: name for name in _nodes}
+589 # 2) keep the code below as is
+590
+591 if save_graph_path is not None :
+592 tf.io.write_graph(
+593 graph_def,
+594 save_graph_path,
+595 GRAPH_NAME_FOR_SAVING,
+596 as_text=False,
+597 )
+598
+599 # Demonstrate that converted tf model works:
+600 _test_converted_tf_model(
+601 graph_def,
+602 test_input_dict,
+603 onnx_tensor_id_to_tf_tensor_name
+604 )
+605 # Reset graph to prevent issues with testing quantized model
+606 tf.compat.v1.reset_default_graph()
+607
+608 # Use selected quantization function to obtain quantized model:
+609 _input_shape = (_BATCH, _CHANNELS, *_PREPROCESSING_HW)
+610 quantized_model = quant_function(
+611 graph_def,
+612 {onnx_tensor_id_to_tf_tensor_name[INPUT_TENSOR_NAME]: _input_shape},
+(continues on next page)
+26 Chapter 5. End-To-End Test
+
+===== PAGE 31 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+613 [onnx_tensor_id_to_tf_tensor_name[OUTPUT_TENSOR_NAME]],
+614 onnx_tensor_id_to_tf_tensor_name
+615 )
+616
+617 # Define target hardware parameters (an instance of ModelParameters class),
+618 # parameters may be constructed manually or a predefined set used:
+619 hardware_parameters = TPU_128x128_PARAMS
+620
+621 # Demonstrate the quantized model works as well:
+622 _test_quantized_model(
+623 quantized_model,
+624 test_input_dict,
+625 onnx_tensor_id_to_tf_tensor_name,
+626 # debugging with quantized PB requires CWL value
+627 # (typical value is 128 for TPU with 128*128 systolic array)
+628 cache_word_length=hardware_parameters.tpu_parameters.cache_word_length,
+629 )
+630
+631 # Compiler requires model in a different format
+632 # (these model not necessarily comes from quantization utility)
+633 # so conversion is required:
+634 network, renaming = Network.from_quantized_model(quantized_model)
+635 network.set_batch(1)
+636
+637 # Compile quantized model.
+638 # Compilation yields so called TLM model that holds
+639 # all TPU instructions and model constants (weights). It is crucial for a
+640 # debugging to have access to a TLM program separately:
+641 tlm_program = compiler.compile_(hardware_parameters, network, DEFAULT)
+642
+643 # TLM
+644 if enable_tlm_execution:
+645 # ====================================================================#
+646 # NOTE: Testing on a TLM model is an internal debug tool. TLM packages
+647 # are not distributed in production and are unavailable to the public.
+648 # Presence of TLM testing in this file guarantees internal consistency
+649 # of test system and must be ignored by any external users unless
+650 # explicitly mentioned by developers.
+651 # ====================================================================#
+652 _test_tlm_program(tlm_program, test_input_dict) # Check TLM
+653
+654 # TPU
+655 if enable_tpu_execution:
+656 # Compiler program must be saved to a separate *.tpu file (internal
+657 # format). This a separation line between TPU Framework (that has
+658 # original model as in input and TPU program as an output) and TPU
+659 # Runtime (that has TPU program as input and allows user to make
+660 # inference runs with a given data).
+661 with tempfile.TemporaryDirectory() as temporary_directory:
+662 # Full path to the output .tpu program:
+663 tpu_program_file_name = os.path.join(temporary_directory,
+664 'program.tpu')
+(continues on next page)
+27
+
+===== PAGE 32 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+665
+666 executable, tensor_descriptions = tlm_program
+667
+668 # Save TLM program in TPU format:
+669 tpu_program = TpuProgram.from_executable(executable,
+670 tensor_descriptions)
+671 tpu_program.to_file(tpu_program_file_name)
+672
+673 # Get list of all available TPU devices on a localhost:
+674 available_tpu_devices = tpu.Device.list_devices()
+675 assert available_tpu_devices, 'TPU not found, see: ls /dev/tpu* '
+676
+677 if enable_tpu_raw_mode:
+678 # Convert regular program to raw program, for raw program user
+679 # must perform TPU packing/unpacking manually. `codec` instance
+680 # performs packing/unpacking via Python implementation.
+681 raw_program_file_name = os.path.join(temporary_directory,
+682 'program_raw.tpu')
+683 codec = tpu.convert_to_raw(tpu_program_file_name,
+684 raw_program_file_name)
+685
+686 # Use path to RAW-version of the program:
+687 tpu_program_file_name = raw_program_file_name
+688
+689 # Open first available TPU device:
+690 with tpu.Device.open(available_tpu_devices[0]) as tpu_device:
+691 # Upload saved program to a TPU:
+692 with tpu_device.load(tpu_program_file_name) as tpu_program:
+693 # Create an inference session:
+694 with tpu_program.inference() as inference:
+695 if enable_tpu_raw_mode:
+696 # Explicit TPU packing: convert input from user
+697 # format to TPU raw format
+698 test_input_dict = codec.encode(test_input_dict)
+699
+700 # Perform a single inference with raw data
+701 # (blocking call). libtpu now accepts ready uin8
+702 # data and should NOT perform tpu packing/unpackng:
+703 tpu_output = inference.sync(test_input_dict)
+704
+705 # Explicit TPU unpacking: convert back from TPU raw
+706 # format to user format
+707 tpu_output = codec.decode(tpu_output)
+708 else:
+709 # Perform a single inference (blocking call):
+710 tpu_output = inference.sync(test_input_dict)
+711
+712 # Check that TPU (as an alternative model) works. Note
+713 # that the TPU output dictionary (as well as original
+714 # model output and quantized model output)
+715 # are subjected to the same test procedure:
+716 _assert_output_dictionary(tpu_output, 'TPU')
+(continues on next page)
+28 Chapter 5. End-To-End Test
+
+===== PAGE 33 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+717
+718
+719 def parse_args() -> argparse.Namespace:
+720 parser = argparse.ArgumentParser()
+721 parser.add_argument('--enable-tlm', action= 'store_true', default= False)
+722 parser.add_argument('--enable-tpu', action= 'store_true', default= False)
+723 parser.add_argument('--enable-raw', action= 'store_true', default= False)
+724 parser.add_argument('--save-graph-path', default= None)
+725 parser.add_argument('--quantize-method', action= 'store', default= 'qc')
+726 return parser.parse_args()
+727
+728
+729 if __name__ == '__main__':
+730 args = parse_args()
+731
+732 print(
+733 f'Testing end-to-end with args: \n'
+734 f'- TLM enable= {args.enable_tlm},\n'
+735 f'- TPU enable= {args.enable_tpu},\n'
+736 f'- TPU raw mode= {args.enable_raw}\n'
+737 f'- Save graph= {args.save_graph_path}\n'
+738 f'- Quant method= {args.quantize_method}'
+739 )
+740
+741 q_methods = {
+742 'qc': quantization_with_calib,
+743 'qcf': quantization_with_calib_and_finetune,
+744 'qt': quantization_with_thresholds,
+745 'qtf': quantization_with_thresholds_and_finetune,
+746 }
+747
+748 test_end_to_end(
+749 q_methods[args.quantize_method],
+750 args.enable_tlm,
+751 args.enable_tpu,
+752 args.enable_raw,
+753 args.save_graph_path,
+754 )
+29
+
+===== PAGE 34 =====
+tpu_framework_30.1.0, Release 30.1.0
+30 Chapter 5. End-To-End Test
+
+===== PAGE 35 =====
+CHAPTER
+SIX
+SUPPORTED MODELS
+• anti_spoof_mn3
+• dcgan
+• densenet121
+• efficientnet_b0
+• efficientnet_b1
+• efficientnet_b2
+• efficientnet_b3
+• efficientnet_b4
+• efficientnet_b5
+• fcn_8s
+• flownets
+• glint360k_r100_pfc
+• glint360k_r50_pfc
+• gpt21
+• inception_v1
+• inception_v2
+• inception_v3
+• inception_v4
+• iresnet101
+• iresnet50
+• lenet5
+• mobile_facenet
+• mobilenet_v1
+• mobilenet_v2
+• nasnet_mobile
+• pnasnet_mobile
+1 Note that model beginning is truncated from actual inputs tokens to /wte/Gather_output_0 due to a large embedding op “/wte/Gather”.
+31
+
+===== PAGE 36 =====
+tpu_framework_30.1.0, Release 30.1.0
+• regnet_y_800mf
+• resnet152
+• resnet34
+• resnet50
+• resnet50_mlperf
+• resnet50_prelu
+• resnet50_v2
+• resnext50
+• scrfd
+• segm_lraspp_mobilenet_v3_large_384x384
+• seresnet50
+• squeezenet
+• ssd_mobilenet_v12
+• ssd_mobilenet_v23
+• ssd_resnet504
+• ssdlite320_mobilenet_v3_large5
+• tiny_yolo2
+• tiny_yolo3
+• torch_resnet50
+• vgg19
+• xception
+• yolo11n_obb
+• yolo2
+• yolo3
+• yolo5s6
+• yolov8n_pose7
+2 Note that model is truncated from the beginning to {‘BoxPredictor_0/BoxEncodingPredictor/BiasAdd:0’, ‘BoxPredic-
+tor_5/ClassPredictor/BiasAdd:0’, ‘BoxPredictor_4/BoxEncodingPredictor/BiasAdd:0’, ‘BoxPredictor_2/BoxEncodingPredictor/BiasAdd:0’,
+‘BoxPredictor_4/ClassPredictor/BiasAdd:0’, ‘BoxPredictor_5/BoxEncodingPredictor/BiasAdd:0’, ‘BoxPredictor_0/ClassPredictor/BiasAdd:0’,
+‘BoxPredictor_3/ClassPredictor/BiasAdd:0’, ‘BoxPredictor_3/BoxEncodingPredictor/BiasAdd:0’, ‘BoxPredictor_1/ClassPredictor/BiasAdd:0’,
+‘BoxPredictor_1/BoxEncodingPredictor/BiasAdd:0’, ‘BoxPredictor_2/ClassPredictor/BiasAdd:0’} and the remained is added to a post-processing
+procedure.
+3 Note that model is truncated from the beginning to {‘BoxPredictor_0/BoxEncodingPredictor/BiasAdd:0’, ‘BoxPredic-
+tor_5/ClassPredictor/BiasAdd:0’, ‘BoxPredictor_4/BoxEncodingPredictor/BiasAdd:0’, ‘BoxPredictor_2/BoxEncodingPredictor/BiasAdd:0’,
+‘BoxPredictor_4/ClassPredictor/BiasAdd:0’, ‘BoxPredictor_5/BoxEncodingPredictor/BiasAdd:0’, ‘BoxPredictor_0/ClassPredictor/BiasAdd:0’,
+‘BoxPredictor_3/ClassPredictor/BiasAdd:0’, ‘BoxPredictor_3/BoxEncodingPredictor/BiasAdd:0’, ‘BoxPredictor_1/ClassPredictor/BiasAdd:0’,
+‘BoxPredictor_1/BoxEncodingPredictor/BiasAdd:0’, ‘BoxPredictor_2/ClassPredictor/BiasAdd:0’} and the remained is added to a post-processing
+procedure.
+4 Note that model is truncated from the beginning to {‘concat_1:0’, ‘concat:0’} and the remained is added to a post-processing procedure.
+5 Note that model is truncated from the beginning to {‘/Squeeze_2_output_0’, ‘/Reshape_output_0’} and the remained is added to a post-
+processing procedure.
+6 Notethatmodelistruncatedfromthebeginningto{‘onnx::Shape_663’,‘onnx::Shape_999’,‘onnx::Shape_327’}andtheremainedisaddedto
+a post-processing procedure.
+7 Note that model is truncated from the beginning to {‘/model.22/Mul_6_output_0’, ‘/model.22/Concat_5_output_0’,
+‘/model.22/Sigmoid_output_0’, ‘/model.22/Sigmoid_1_output_0’, ‘/model.22/Concat_7_output_0’, ‘/model.22/Concat_6_output_0’,
+32 Chapter 6. Supported models
+
+===== PAGE 37 =====
+tpu_framework_30.1.0, Release 30.1.0
+‘/model.22/dfl/conv/Conv_output_0’} and the remained is added to a post-processing procedure.
+33
+
+===== PAGE 38 =====
+tpu_framework_30.1.0, Release 30.1.0
+34 Chapter 6. Supported models
+
+===== PAGE 39 =====
+CHAPTER
+SEVEN
+QUICK START
+1 import os
+2 from typing import Any
+3
+4 import numpy as np
+5 import numpy.typing as npt
+6 import pytpu as tpu
+7 from PIL import Image
+8
+9 # comment out the next line. It 's essential for the TPU Framework 's CI/CD only
+10 from tpu_framework_tests.test_quant_compile import COMPILER_DIR as PROGRAM_DIR
+11
+12 AnyArray = npt.NDArray[Any]
+13 TensorName = str
+14
+15 IMAGENET_RGB_MEANS = np.array([123.68, 116.779, 103.939], dtype=np.float32)
+16 IMAGENET_CLASSES = {
+17 256: "Leonberg",
+18 257: "Newfoundland, Newfoundland dog",
+19 258: "Great Pyrenees",
+20 }
+21
+22 IMAGE_FILE = 'tpu_framework_tests/resources/ILSVRC2012_val_00000045.JPEG'
+23 INPUT_IMAGE_HEIGHT = 224
+24 INPUT_IMAGE_WIDTH = 224
+25 EXPECTED_CLASS = 257
+26
+27 RESNET50_INPUT_NAME = 'Placeholder:0'
+28 RESNET50_OUTPUT_NAME = 'logits:0'
+29 RESNET50_CLASS_OFFSET = 1
+30
+31 # adjust path to the program file according to your directory structure
+32 PROGRAM_FILE = os.path.join(PROGRAM_DIR, 'tpu_programs',
+33 'resnet50_b1_o5_128x128_asic.tpu')
+34
+35
+36 def preprocessing(image: Image.Image) -> dict[TensorName, AnyArray]:
+37 width, height = image.size
+38 min_dim = int(min(height, width) * 0.85)
+39 crop_top = (height - min_dim) // 2
+40 crop_left = (width - min_dim) // 2
+(continues on next page)
+35
+
+===== PAGE 40 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+41 cropped_image = image.convert( 'RGB').crop(
+42 (crop_left, crop_top, crop_left + min_dim, crop_top + min_dim)
+43 )
+44 resized_image = cropped_image.resize(size=(INPUT_IMAGE_WIDTH,
+45 INPUT_IMAGE_HEIGHT))
+46 array = np.asarray(resized_image).astype(np.float32) - IMAGENET_RGB_MEANS
+47 return {RESNET50_INPUT_NAME: np.expand_dims(array, axis=0)}
+48
+49
+50 def postprocessing(inference_outputs: dict[TensorName, AnyArray]) -> AnyArray:
+51 return (np.argsort(inference_outputs[RESNET50_OUTPUT_NAME])
+52 + RESNET50_CLASS_OFFSET)
+53
+54
+55 if __name__ == '__main__':
+56 tpu_devices = tpu.Device.list_devices()
+57 assert tpu_devices, (f 'TPU device file not found: {tpu_devices}. '
+58 f'Check <ls /dev/tpu*>. ')
+59
+60 with (
+61 Image.open(IMAGE_FILE) as image,
+62 tpu.Device.open(tpu_devices[0]) as tpu_device,
+63 tpu_device.load(PROGRAM_FILE) as tpu_program,
+64 tpu_program.inference() as inference,
+65 ):
+66 preprocessed_inputs = preprocessing(image=image)
+67 inference_outputs = inference.sync(preprocessed_inputs)
+68 predictions = postprocessing(inference_outputs=inference_outputs)
+69 top1_class = int(predictions[0][-1])
+70
+71 print('\nInference output is: ')
+72 print(f'{top1_class}: " {IMAGENET_CLASSES[top1_class]}"')
+73 assert top1_class == EXPECTED_CLASS
+36 Chapter 7. Quick start
+
+===== PAGE 41 =====
+CHAPTER
+EIGHT
+SUB MODEL
+1 """
+2 This test demonstrates the capability of network pruning
+3 using the get_sub_model function.
+4 By using get_sub_model, we split the network into two or more parts (if needed)
+5 without losing any layers or operations.
+6
+7 This test shows an example of how to use get_sub_model
+8 to split a network into two parts.
+9 The CUT_NODES_NAMES layer will serve as the output node
+10 for the first part of the network and as the input node for the second part.
+11 The preprocessing function is applied before feeding the image into the network
+12 and postprocessing is applied after obtaining the result from the last part.
+13 Finally, the output from the network is compared with the result full model.
+14 """
+15 import os
+16 from typing import Any
+17 from typing import List
+18 from typing import Union
+19
+20 import numpy as np
+21 import numpy.typing as npt
+22 import onnx
+23 import onnxruntime as ort
+24 from PIL import Image
+25
+26 from tpu_framework import get_sub_model
+27
+28 AnyArray = npt.NDArray[Any]
+29
+30 MODEL_DIR = '/auto/heap/dnn_model_zoo/dnn_model_zoo_resources/models/public'
+31
+32 ONNX_FILE_NAME = 'torch_resnet50.onnx'
+33 IMAGE_PATH = 'tpu_framework_tests/resources/ILSVRC2012_val_00000045.JPEG'
+34
+35 INPUT_NODES_NAMES = [ 'input.1']
+36 CUT_NODES_NAMES = [ '387']
+37 OUTPUT_NODES_NAMES = [ '495']
+38
+39 INPUT_IMAGE_WIDTH = 224
+40 INPUT_IMAGE_HEIGHT = 224
+(continues on next page)
+37
+
+===== PAGE 42 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+41
+42 IMAGENET_RGB_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+43 IMAGENET_RGB_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+44
+45 IMAGENET_CLASESS = {
+46 "Leonberg": 256,
+47 "Newfoundland, Newfoundland dog": 257,
+48 "Great Pyrenees": 258,
+49 }
+50 EXPECTED_CLASS = IMAGENET_CLASESS["Newfoundland, Newfoundland dog"]
+51
+52
+53 def infer(
+54 model: onnx.ModelProto,
+55 image: Union[Image.Image, AnyArray]
+56 ) -> List[AnyArray]:
+57 trimmed_model_bytes = model.SerializeToString()
+58 session = ort.InferenceSession(trimmed_model_bytes)
+59
+60 input_name = session.get_inputs()[0].name
+61 output_name = session.get_outputs()[0].name
+62
+63 inference = session.run([output_name], {input_name: image})
+64
+65 return inference
+66
+67
+68 def preprocess(image: Image.Image) -> AnyArray:
+69 width, height = image.size
+70 min_dim = int(min(height, width) * 0.85)
+71 crop_top = (height - min_dim) // 2
+72 crop_left = (width - min_dim) // 2
+73 cropped_image = image.crop(
+74 (crop_left, crop_top, crop_left + min_dim, crop_top + min_dim)
+75 )
+76
+77 resized_image = cropped_image.resize(
+78 size=(INPUT_IMAGE_WIDTH, INPUT_IMAGE_HEIGHT)
+79 )
+80
+81 arr = (np.asarray(resized_image) / 255.0 - IMAGENET_RGB_MEAN) / IMAGENET_RGB_STD
+82 arr = np.transpose(arr, (2, 0, 1))
+83
+84 return np.array(np.expand_dims(arr, axis=0)).astype(np.float32)
+85
+86
+87 def postprocess(inference_outputs: List[AnyArray]) -> int:
+88 offset = 1
+89 return int((np.argsort(inference_outputs) + offset)[0][0][-1])
+90
+91
+92 if __name__ == '__main__':
+(continues on next page)
+38 Chapter 8. Sub model
+
+===== PAGE 43 =====
+tpu_framework_30.1.0, Release 30.1.0
+(continued from previous page)
+93 onnx_model = onnx.load(os.path.join(MODEL_DIR, ONNX_FILE_NAME))
+94
+95 with Image.open(IMAGE_PATH) as image:
+96 image = preprocess(image)
+97
+98 full_output = infer(onnx_model, image)
+99
+100 head = get_sub_model(
+101 model=onnx_model,
+102 ordered_input_names=INPUT_NODES_NAMES,
+103 ordered_output_names=CUT_NODES_NAMES
+104 )
+105
+106 head_output = infer(head, image)
+107
+108 tail = get_sub_model(
+109 model=onnx_model,
+110 ordered_input_names=CUT_NODES_NAMES,
+111 ordered_output_names=OUTPUT_NODES_NAMES
+112 )
+113
+114 tail_output = infer(tail, head_output[0])
+115
+116 assert postprocess(full_output) == postprocess(tail_output) == EXPECTED_CLASS
+39
+
+===== PAGE 44 =====
+tpu_framework_30.1.0, Release 30.1.0
+40 Chapter 8. Sub model
+
+===== PAGE 45 =====
+CHAPTER
+NINE
+GLOSSARY OF TERMS
+9.1 General Artificial Intelligence and Neural Networks Terms
+Accuracy
+Accuracy is a performance metric that measures the proportion of correct predictions made by a model out of
+the total predictions. It is calculated as the ratio of the number of correct predictions to the total number of
+predictions. Accuracy is most useful when the classes in the dataset are balanced.
+Activation Function
+An activation function is a mathematical function applied to the output of a neuron in a neural network. It
+introduces non-linearity into the model, enabling it to learn complex patterns. Common activation functions
+include the sigmoid function, ReLU (Rectified Linear Unit), and tanh, each of which has specific properties that
+influence the behavior of the neural network.
+Attention Mechanism
+Anattentionmechanismisatechniqueinneuralnetworks,particularlyinmodelslikeTransformers,thatenables
+themodeltofocusonspecificpartsoftheinputdatawhenmakingpredictions. Itdynamicallyweightstheimpor-
+tanceofdifferentinputelements,allowingthemodeltocapturerelationshipsanddependenciesmoreeffectively,
+especially in tasks involving sequences, such as language translation or image captioning.
+Batch Normalization
+BatchNormalizationisatechniqueusedintrainingdeepneuralnetworkstostabilizeandacceleratethelearning
+process. It normalizes the inputs of each layer by adjusting and scaling the activations within a mini-batch,
+ensuring that they have a consistent mean and variance. This helps in reducing the internal covariate shift,
+making the network more robust and allowing for the use of higher learning rates. Batch normalization can also
+act as a regularizer, potentially reducing the need for other forms of regularization like dropout.
+Bias
+Bias is an additional parameter in a neural network that is added to the weighted sum of inputs before applying
+the activation function. It allows the model to shift the activation function, enabling it to fit the data better by
+providing more flexibility in learning. Bias terms are adjusted during training along with weights to minimize
+prediction errors.
+Classifier
+A classifier is a type of model in machine learning that learns the relationship between input features and class
+labelsusingtrainingdata. Oncetrained,theclassifierappliesthislearnedrelationshiptopredicttheclassofnew,
+unseenexamples. Classifiersareusedinvarioustaskssuchasimagerecognition,spamdetection,andsentiment
+analysis.
+Convolutional Neural Network
+AConvolutionalNeuralNetwork(CNN)isatypeofdeeplearningmodelspecificallydesignedforprocessingand
+analyzing visual data, such as images and videos. CNNs use convolutional layers to automatically learn spatial
+hierarchiesoffeaturesfromtheinputdata,makingthemhighlyeffectivefortaskslikeimageclassification,object
+detection, and segmentation.
+41
+
+===== PAGE 46 =====
+tpu_framework_30.1.0, Release 30.1.0
+Dataset
+A dataset is a collection of data that is used to train, validate, and test machine learning models. It typically
+consists of input features and corresponding labels or target values. Datasets are crucial for developing and
+evaluating models, as they provide the examples from which the model learns patterns and relationships.
+Detector
+Adetectorisamodelusedincomputervisiontoidentifyandlocatemultipleobjectswithinanimage. Itassigns
+precise bounding boxes around the objects and classifies each object into categories. Detectors are commonly
+used in object detection tasks to determine both the presence and location of objects in an image.
+GPU
+Graphics Processing Units
+Inference
+Inference is the process that a already trained neural network uses to draw conclusions from brand-new data.
+IOU
+Intersection Over Union (IoU) is a performance metric used to evaluate the accuracy of object detection, seg-
+mentation,andannotationalgorithms. Itmeasurestheoverlapbetweenthepredictedregionandthegroundtruth
+region, defined as the ratio of the intersection area to the union area of these regions. A higher IoU indicates a
+more accurate prediction.
+Layer
+Alayerinaneuralnetworkisagroupofneuronsoranoperationthatprocessesdata. Differenttypesoflayers,such
+as convolutional layers (e.g., Conv2D), pooling layers (e.g., MaxPooling), and fully connected layers, perform
+specificoperationsontheinputdata. Layersarestackedtoformanetwork,witheachlayertransformingthedata
+and passing it to the next layer.
+LLM
+Large Language Models (LLMs) are expansive deep learning models pre-trained on vast amounts of text data.
+Thesemodelsarecapableofunderstanding,generating,andmanipulatinghumanlanguagewithhighproficiency.
+LLMs are the foundation for applications such as chatbots, text completion, translation, and other language-
+related tasks.
+MAP
+Mean Average Precision (mAP) is a metric used to measure the performance of models in tasks such as object
+detection and information retrieval. It calculates the average precision for each class and then averages these
+valuesacrossallclasses. mAPisparticularlyusefulinevaluatingmodelswheremultiplecategoriesarepredicted,
+as it considers both precision and recall.
+Mean Pixel Accuracy
+MeanPixelAccuracy(mPA)isametricthatmeasurestheaveragepixelaccuracyacrossallclasses. Itiscalculated
+by first determining the pixel accuracy for each class (the ratio of correctly classified pixels of that class to the
+total number of pixels of that class) and then averaging these accuracies across all classes. mPA provides a
+balanced view of accuracy across classes, which is particularly useful in cases of class imbalance.
+Metric
+A metric is a quantitative measure used to evaluate the performance of a model. Metrics are used to assess how
+well a model is performing in terms of various criteria, such as accuracy, precision, recall, and other domain-
+specific measures.
+mIoU
+MeanIntersectionOverUnion(mIoU)isametricusedtoevaluatetheperformanceofsegmentationalgorithms.
+It is defined as the average of the Intersection Over Union (IoU) values for all classes. IoU measures the overlap
+between the predicted segmentation and the ground truth, divided by the total area covered by the union of the
+two. A higher mIoU indicates better segmentation accuracy across all classes.
+Model
+Inthecontextofmachinelearningandartificialintelligence,amodelisamathematicalrepresentationofaprocess
+42 Chapter 9. Glossary of Terms
+
+===== PAGE 47 =====
+tpu_framework_30.1.0, Release 30.1.0
+thatistrainedtorecognizepatternsormakedecisionsbasedoninputdata. Amodelconsistsofparameters(like
+weightsandbiasesinneuralnetworks)thatarelearnedfromthetrainingdata. Oncetrained,themodelcanmake
+predictions or perform tasks such as classification, regression, or generation of new data. Models are at the core
+of AI systems, powering applications from image recognition to natural language processing.
+ONNX
+Open Neural Network Exchange is an open ecosystem that empowers AI developers to choose the right tools as
+their project evolves.
+Pixel Accuracy
+Pixel accuracy is the ratio of the number of correctly classified pixels to the total number of pixels in an image.
+It is a common metric used in image segmentation tasks to evaluate how well the model’s predictions match the
+true labels on a per-pixel basis.
+Postprocessing
+Typically a model is bound to a particular preprocessing procedure. Used to perform postprocessing. After a
+solution is found, the postprocessing part of the model can be executed. The solving is controlled outside TPU
+and used to convert output data to ajusted format.
+Preprocessing
+Preprocessing samples to ensure that they are in a format that the network can accept is a common first step in
+deeplearningworkflows. Forexample,youcanresizeimageinputtomatchthesizeofanimageinputlayer. You
+can also preprocess data to enhance desired features or reduce artifacts that can bias the network. Typically a
+model is bound to a particular preprocessing procedure.
+PyTorch
+PyTorch is a fully featured framework for building deep learning models,which is a type of machine learning
+that’s commonly used in applications like image recognition and language processing.
+Segmentor
+A segmentor is a type of model in computer vision that divides an image into multiple parts or regions, each of
+whichbelongstothesameclass. Thisprocess,knownasimagesegmentation,assignsaclasslabeltoeachpixel,
+effectively creating a map of the different objects or regions within the image.
+Tensor
+Multi-dimensional arrays of numbers that represent complex data.
+TensorFlow
+TensorFlow is an open-source library developed by Google primarily for deep learning applications.
+Test Dataset
+The test dataset is a separate subset of the dataset used to evaluate the performance of a trained model. It con-
+tains data that the model has not seen during training, providing an unbiased assessment of how well the model
+generalizes to new, unseen data. The test dataset is crucial for validating the model’s accuracy and robustness.
+Train Dataset
+The train dataset is a subset of the dataset used to train a machine learning model. During training, the model
+learns from this data by adjusting its parameters to minimize the error in its predictions. The quality and size of
+the train dataset significantly influence the model’s ability to generalize to new, unseen data.
+Transformer
+Transformers are a type of neural network architecture designed to process sequential data by learning the rela-
+tionships and dependencies between different elements in the sequence. They achieve this by utilizing mecha-
+nismslikeself-attention,whichallowsthemtocapturecontextandtrackrelationshipsacrosstheentiresequence.
+Transformers are widely used in natural language processing tasks, such as translation, summarization, and lan-
+guage modeling.
+Validation Dataset
+The validation dataset is a subset of the dataset used to tune the hyperparameters of a machine learning model
+and evaluate its performance during training. It serves as a proxy to gauge how well the model generalizes to
+9.1. General Artificial Intelligence and Neural Networks Terms 43
+
+===== PAGE 48 =====
+tpu_framework_30.1.0, Release 30.1.0
+new,unseendatawithoutusingthetestdataset. Byassessingthemodel’sperformanceonthevalidationdataset,
+youcanmakeadjustmentstoimprovethemodel’saccuracyandpreventoverfittingbeforefinalevaluationonthe
+test dataset.
+Weight
+Inaneuralnetwork,aweightisacoefficientthatismultipliedbytheinputvalueofaneuron. Weightsdetermine
+the importance of each input in predicting the output. During training, weights are adjusted iteratively through
+optimizationalgorithms,suchasgradientdescent,tominimizetheerrorbetweenthepredictedandactualoutputs.
+9.2 Tensor Processing Unit Speific Terms
+Cache Word Length
+Size of one cache word in bytes
+Casting
+Casting to a TPU internal dtype (typically int8 or float16).
+Decoding
+Deprecated in favor of Unpacking
+Encoding
+Deprecated in favor of Packing
+LibTpu
+Library on C++ - system for launching Program
+Mask
+Auxiliary data that allows data to be stored in memory so that it is a multiple of the Cache Word Length
+Metadata
+Data used by LibTpu to make packing/unpacking by itself
+Packing
+Additional data transformation from numpy tensor raw format before inference on the TPU. Can be executed
+using Python or LibTpu. Includes the following stages: scaling, casting, padding, Tensor2Words.
+Padding
+Aligns data with a pre-calculated mask for optimal layout in memory.
+Program
+TPU Program is a set of TPU instructions and predefined constant equivalent equivalent to a model.
+Quantization
+In TPU context quantization is used to...
+Raw Mode
+OperatingwithTPUusingflat2duint8arraysasinputsandoutputs,thatiswithpackingandunpackingperformed
+offloaded to some outer procedure.
+Raw TPU Program
+PrograminRawMode. DoesntcontainMetadata,soTPUprogramandinputsshouldbepre-packed,andoutput
+should be post-unpacked.
+Scaling
+Multiplication by a constant factor known in advance from quantization procedure (typically to fit in internal
+dtype in that TPU operates such as int8 and float16).
+Smoke Test
+Preliminary test or sanity test to reveal simple failures severe enough to stop further testing immediately.
+44 Chapter 9. Glossary of Terms
+
+===== PAGE 49 =====
+tpu_framework_30.1.0, Release 30.1.0
+Tensor Processing Unit
+Tensor Processing Unit is a HiTech’s custom-developed application-specific integrated circuits (ASICs) used to
+accelerate machine learning workloads.
+Tensor2Words
+Converts data into words that are multiples of CWL. It is assumed that the input tensor already has dtype fp16
+or int8.
+Test
+TPU test is bundle of TPU program and reference inputs and outputs.
+TPU Device
+TPU Device on which the neural network calculation is performed.
+Unpacking
+Additional data transformation from raw format to numpy tensor after inference on the data center. Can be
+executed using Python or LibTpu. Includes the following stages: Words2Tensor, unmask, scaling, casting.
+Words2Tensor
+Converts the data obtained from inference into a tensor with user_shape
+9.2. Tensor Processing Unit Speific Terms 45
+
+===== PAGE 50 =====
+tpu_framework_30.1.0, Release 30.1.0
+46 Chapter 9. Glossary of Terms
+
+===== PAGE 51 =====
+PYTHON MODULE INDEX
+t
+tpu_compiler.compiler.presets._o1, 13
+tpu_compiler.compiler.presets._o5, 13
+47
+
+===== PAGE 52 =====
+tpu_framework_30.1.0, Release 30.1.0
+48 Python Module Index
+
+===== PAGE 53 =====
+INDEX
+A
+Accuracy,41
+Activation Function ,41
+as_graph()(QuantizedModel method), 9
+Attention Mechanism ,41
+B
+Batch Normalization ,41
+Bias, 41
+C
+Cache Word Length , 44
+calibrate() (RegularModel method), 10
+Casting,44
+Classifier,41
+compile_ (class in tpu_compiler.compiler), 12
+Convolutional Neural Network , 41
+D
+Dataset,42
+Decoding,44
+Detector,42
+dump_thresholds() (RegularModel static method), 11
+E
+Encoding,44
+F
+fine_tune() (RegularModel method), 11
+G
+get_hw_params (class in tpu_tlm_is), 13
+GPU,42
+I
+Inference, 42
+IOU,42
+L
+Layer,42
+LibTpu, 44
+LLM, 42
+load() (QuantizedModel static method), 9
+load_thresholds() (RegularModel static method), 12
+M
+MAP, 42
+Mask,44
+Mean Pixel Accuracy , 42
+Metadata, 44
+Metric,42
+mIoU,42
+Model,42
+module
+tpu_compiler.compiler.presets._o1, 13
+tpu_compiler.compiler.presets._o5, 13
+O
+O1 (in module tpu_compiler.compiler.presets._o1), 13
+O5 (in module tpu_compiler.compiler.presets._o5), 13
+ONNX,43
+onnx_to_tf (class in onnx_direct._convert), 9
+P
+Packing,44
+Padding,44
+Pixel Accuracy , 43
+Postprocessing, 43
+Preprocessing,43
+Program,44
+PyTorch,43
+Q
+Quantization,44
+quantize() (RegularModel method), 12
+QuantizedModel (class in dnn_quant.api), 9
+R
+Raw Mode , 44
+Raw TPU Program ,44
+RegularModel(class in dnn_quant.api), 10
+rescale() (QuantizedModel method), 10
+49
+
+===== PAGE 54 =====
+tpu_framework_30.1.0, Release 30.1.0
+S
+save() (QuantizedModel method), 10
+Scaling,44
+Segmentor, 43
+Smoke Test ,44
+T
+Tensor, 43
+Tensor Processing Unit ,45
+Tensor2Words, 45
+TensorFlow,43
+Test, 45
+Test Dataset , 43
+TPU Device ,45
+tpu_compiler.compiler.presets._o1
+module, 13
+tpu_compiler.compiler.presets._o5
+module, 13
+Train Dataset ,43
+Transformer,43
+U
+Unpacking, 45
+V
+Validation Dataset ,43
+W
+Weight, 44
+Words2Tensor, 45
+50 Index

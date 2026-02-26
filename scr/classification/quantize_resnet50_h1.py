@@ -16,8 +16,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-path", type=Path, default=REPO_ROOT / "experiments/classification/resnet50.onnx")
     parser.add_argument("--calibration-dir", type=Path, default=REPO_ROOT / "data/calibration/imagenet")
     parser.add_argument("--output-qm", type=Path, default=REPO_ROOT / "experiments/classification/resnet50_h1_quantized.qm")
-    parser.add_argument("--input-tensor-name", type=str, default="input:0")
-    parser.add_argument("--output-tensor-name", type=str, default="fc_Gemm_3/add:0")
+    parser.add_argument("--input-tensor-name", type=str, default=None, help="ONNX input tensor id (default: first ONNX input)")
+    parser.add_argument("--output-tensor-name", type=str, default=None, help="ONNX output tensor id (default: first ONNX output)")
     parser.add_argument("--num-calibration-images", type=int, default=0, help="How many calibration images to use (0=all)")
     parser.add_argument("--percentile", type=float, default=100.0)
     parser.add_argument("--batch-axis", type=int, default=0)
@@ -97,25 +97,19 @@ def map_tensor_name(name: str, mapping: Dict[str, str]) -> str:
     return mapping.get(name, name)
 
 
-def resolve_output_node_name_for_regular_model(graph_def: Any, requested_name: str) -> str:
+def tensor_name_to_node_name(name: str) -> str:
+    return name.split(":", 1)[0]
+
+
+def ensure_node_exists(graph_def: Any, node_name: str) -> None:
     node_names = {n.name for n in graph_def.node}
-    if requested_name in node_names:
-        return requested_name
-    if requested_name.endswith(":0"):
-        op_name = requested_name[:-2]
-        if op_name in node_names:
-            return op_name
-    else:
-        with_suffix = f"{requested_name}:0"
-        if with_suffix in node_names:
-            return with_suffix
-
-    # Fallback: choose last likely classification head.
-    candidates = [n.name for n in graph_def.node if "gemm" in n.name.lower() or "fc" in n.name.lower() or "logits" in n.name.lower()]
-    if candidates:
-        return candidates[-1]
-
-    raise KeyError(f"Output node '{requested_name}' not found in converted graph")
+    if node_name in node_names:
+        return
+    preview = sorted(list(node_names))[-20:]
+    raise KeyError(
+        f"Output node '{node_name}' not found in converted graph. "
+        f"Check onnx_to_tf mapping and tensor ids. Tail node preview: {preview}"
+    )
 
 
 def main() -> None:
@@ -133,12 +127,21 @@ def main() -> None:
 
     print(f"Loading ONNX: {args.model_path}")
     onnx_model = onnx.load(args.model_path.as_posix())
+    if not onnx_model.graph.input:
+        raise RuntimeError("ONNX model has no inputs")
+    if not onnx_model.graph.output:
+        raise RuntimeError("ONNX model has no outputs")
+
+    onnx_input_default = onnx_model.graph.input[0].name
+    onnx_output_default = onnx_model.graph.output[0].name
+    onnx_input_name = args.input_tensor_name or onnx_input_default
+    onnx_output_name = args.output_tensor_name or onnx_output_default
+
     converted_graph, mapping = load_converted_graph(onnx_model)
     graph_def = to_graph_def(converted_graph)
 
-    mapped_input = map_tensor_name(args.input_tensor_name, mapping)
-    mapped_output = map_tensor_name(args.output_tensor_name, mapping)
-    regular_output_node = resolve_output_node_name_for_regular_model(graph_def, mapped_output)
+    mapped_input = map_tensor_name(onnx_input_name, mapping)
+    mapped_output = map_tensor_name(onnx_output_name, mapping)
 
     calibration_dict = build_calibration_dict(
         calibration_dir=args.calibration_dir,
@@ -147,19 +150,23 @@ def main() -> None:
     )
     calib_tensor = calibration_dict[mapped_input]
     print(f"Calibration tensor: {mapped_input} shape={tuple(calib_tensor.shape)}")
-    print(f"Output tensor (mapped): {mapped_output}")
-    print(f"Output node (RegularModel): {regular_output_node}")
+    print(f"ONNX input/output: {onnx_input_name} -> {onnx_output_name}")
+    print(f"Mapped input/output: {mapped_input} -> {mapped_output}")
 
     input_shapes = {mapped_input: (1, 3, 224, 224)}
+    output_node = tensor_name_to_node_name(mapped_output)
+    ensure_node_exists(graph_def, output_node)
+
     model_kwargs = {
         "original_graph_def": graph_def,
         "input_shapes": input_shapes,
-        "output_nodes": [regular_output_node],
+        "output_nodes": [output_node],
     }
     if mapping:
         model_kwargs["anchors_mapping"] = mapping
 
     regular_model = RegularModel(**model_kwargs)
+    print(f"Output node (RegularModel): {output_node}")
 
     try:
         thresholds = regular_model.calibrate(calibration_data=calibration_dict, percentile=args.percentile)
