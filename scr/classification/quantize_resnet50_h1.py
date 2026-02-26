@@ -112,6 +112,46 @@ def ensure_node_exists(graph_def: Any, node_name: str) -> None:
     )
 
 
+def print_graph_diagnostics(graph_def: Any) -> None:
+    import tensorflow as tf  # type: ignore
+
+    node_names = [n.name for n in graph_def.node]
+    print(f"Converted GraphDef nodes: {len(node_names)}")
+
+    graph = tf.Graph()
+    with graph.as_default():
+        tf.graph_util.import_graph_def(graph_def, name="")
+
+    placeholders = []
+    leaves = []
+    for op in graph.get_operations():
+        if op.type == "Placeholder":
+            for out in op.outputs:
+                placeholders.append((out.name, out.shape.as_list()))
+        for out in op.outputs:
+            if len(out.consumers()) == 0 and out.dtype.name.startswith("float"):
+                leaves.append((out.name, out.shape.as_list(), op.type))
+
+    print("Graph placeholders:")
+    for name, shape in placeholders:
+        print(f"  - {name} shape={shape}")
+    if not placeholders:
+        print("  (none)")
+
+    print("Graph leaf float tensors:")
+    for name, shape, op_type in leaves:
+        print(f"  - {name} shape={shape} op={op_type}")
+    if not leaves:
+        print("  (none)")
+
+    interesting = [n for n in node_names if any(k in n.lower() for k in ("logits", "gemm", "fc", "reshape"))]
+    print("Graph interesting node names (tail 30):")
+    for n in interesting[-30:]:
+        print(f"  - {n}")
+    if not interesting:
+        print("  (none)")
+
+
 def main() -> None:
     args = parse_args()
     if not args.model_path.exists():
@@ -139,6 +179,7 @@ def main() -> None:
 
     converted_graph, mapping = load_converted_graph(onnx_model)
     graph_def = to_graph_def(converted_graph)
+    print_graph_diagnostics(graph_def)
 
     mapped_input = map_tensor_name(onnx_input_name, mapping)
     mapped_output = map_tensor_name(onnx_output_name, mapping)
