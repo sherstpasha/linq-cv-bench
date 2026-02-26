@@ -178,6 +178,7 @@ def resolve_runtime_input_name(
     candidates = key_candidates(preferred_input)
     candidates += runtime_hints
     tried = set()
+    errors: Dict[str, str] = {}
     for name in candidates:
         if name in tried:
             continue
@@ -185,11 +186,14 @@ def resolve_runtime_input_name(
         try:
             out = run_once(inference, name, probe_x)
             return name, out
-        except Exception:
+        except Exception as e:
+            errors[name] = str(e)
             continue
+    error_preview = {k: errors[k] for k in sorted(errors)[:4]}
     raise RuntimeError(
         "Could not resolve input tensor name. "
         f"Tried: {sorted(tried)}. "
+        f"Sample errors: {error_preview}. "
         "Pass --input-tensor-name explicitly if your program uses a custom input name."
     )
 
@@ -231,7 +235,9 @@ def main() -> None:
             with tpu_program.inference() as inference:
                 # Resolve runtime input/output names with first sample.
                 with Image.open(samples[0].path) as image:
-                    probe_x = preprocess_resnet50(image)
+                    probe_x_single = preprocess_resnet50(image)
+                # Compiled TPU program may require static batch size.
+                probe_x = make_batch([probe_x_single], args.batch_size)
                 runtime_hints = _collect_runtime_input_hints(inference, tpu_program)
                 print(f"Runtime input hints: {runtime_hints}")
                 runtime_input_name, probe_out = resolve_runtime_input_name(inference, preferred_input, probe_x, runtime_hints)
