@@ -32,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-tensor-name", type=str, default=None, help="Override output tensor name")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--warmup-images", type=int, default=10)
+    parser.add_argument("--batch-size", type=int, default=32)
     return parser.parse_args()
 
 
@@ -110,6 +111,19 @@ def run_once(inference: object, input_name: str, x: np.ndarray) -> Dict[str, np.
     return inference.sync({input_name: x})  # type: ignore[attr-defined]
 
 
+def make_batch(tensors: List[np.ndarray], batch_size: int) -> np.ndarray:
+    if not tensors:
+        raise RuntimeError("Empty batch")
+    x = np.concatenate(tensors, axis=0)
+    if x.shape[0] == batch_size:
+        return x
+    if x.shape[0] > batch_size:
+        return x[:batch_size]
+    pad_count = batch_size - x.shape[0]
+    pad = np.repeat(x[-1:], repeats=pad_count, axis=0)
+    return np.concatenate([x, pad], axis=0)
+
+
 def resolve_runtime_input_name(inference: object, preferred_input: Optional[str], probe_x: np.ndarray) -> Tuple[str, Dict[str, np.ndarray]]:
     candidates = key_candidates(preferred_input)
     # Generic fallbacks if scales are absent.
@@ -129,6 +143,8 @@ def resolve_runtime_input_name(inference: object, preferred_input: Optional[str]
 
 def main() -> None:
     args = parse_args()
+    if args.batch_size <= 0:
+        raise RuntimeError("--batch-size must be > 0")
     if not args.program_path.exists():
         raise FileNotFoundError(f"TPU program not found: {args.program_path}")
 
@@ -171,28 +187,51 @@ def main() -> None:
                 print(f"Probe output keys: {list(probe_out.keys())}")
 
                 with args.predictions_out.open("w", encoding="utf-8") as out_file:
-                    for i, sample in enumerate(tqdm(samples, desc="TPU Inference")):
-                        with Image.open(sample.path) as image:
-                            x = preprocess_resnet50(image)
+                    num_batches = (len(samples) + args.batch_size - 1) // args.batch_size
+                    processed_images = 0
+                    for batch_idx in tqdm(range(num_batches), desc="TPU Inference"):
+                        start = batch_idx * args.batch_size
+                        end = min((batch_idx + 1) * args.batch_size, len(samples))
+                        batch_samples = samples[start:end]
+
+                        tensors: List[np.ndarray] = []
+                        for sample in batch_samples:
+                            with Image.open(sample.path) as image:
+                                tensors.append(preprocess_resnet50(image))
+                        x = make_batch(tensors, args.batch_size)
 
                         t0 = time.perf_counter()
                         out_dict = run_once(inference, runtime_input_name, x)
                         t1 = time.perf_counter()
 
-                        if i >= args.warmup_images:
-                            infer_time += (t1 - t0)
-                            measured_images += 1
-
                         logits = pick_output(out_dict, preferred_output)
-                        logits = np.asarray(logits).reshape(-1)
-                        top5 = np.argsort(logits)[-5:][::-1]
-                        out_file.write(json.dumps({"image": sample.key, "top5": [int(v) for v in top5.tolist()]}) + "\n")
-                        total_images += 1
+                        logits = np.asarray(logits)
+                        if logits.ndim == 1:
+                            logits = np.expand_dims(logits, axis=0)
+                        if logits.shape[0] < len(batch_samples):
+                            raise RuntimeError(
+                                f"Output batch is smaller than input batch: output={logits.shape}, valid={len(batch_samples)}"
+                            )
+
+                        valid_logits = logits[: len(batch_samples)]
+                        for sample, sample_logits in zip(batch_samples, valid_logits):
+                            top5 = np.argsort(sample_logits)[-5:][::-1]
+                            out_file.write(json.dumps({"image": sample.key, "top5": [int(v) for v in top5.tolist()]}) + "\n")
+                            total_images += 1
+
+                        processed_images += len(batch_samples)
+                        if processed_images > args.warmup_images:
+                            measured_in_batch = len(batch_samples)
+                            if processed_images - len(batch_samples) < args.warmup_images:
+                                measured_in_batch = processed_images - args.warmup_images
+                            infer_time += (t1 - t0)
+                            measured_images += measured_in_batch
 
     timing = {
         "backend": "TPU",
         "device": str(device_id),
         "program_file": args.program_path.as_posix(),
+        "batch_size": args.batch_size,
         "images": total_images,
         "warmup_images": args.warmup_images,
         "measured_inference_sec": infer_time,

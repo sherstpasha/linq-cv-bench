@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-tensor-name", type=str, default=None)
     parser.add_argument("--save-quantized-graph-pb", action="store_true")
     parser.add_argument("--compile-preset", choices=["O1", "O5", "DEFAULT"], default="O5")
-    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--warmup-images", type=int, default=10)
     parser.add_argument("--ground-truth-offset", type=int, default=-1)
@@ -113,6 +113,8 @@ def main() -> None:
         timing_path.as_posix(),
         "--warmup-images",
         str(args.warmup_images),
+        "--batch-size",
+        str(args.batch_size),
     ]
     if args.limit > 0:
         infer_cmd += ["--limit", str(args.limit)]

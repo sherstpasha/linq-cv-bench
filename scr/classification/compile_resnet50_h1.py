@@ -19,7 +19,7 @@ def parse_args() -> argparse.Namespace:
         default=REPO_ROOT / "experiments/classification/resnet50_h1.tpu",
         help="Path to output TPU program (.tpu)",
     )
-    parser.add_argument("--batch-size", type=int, default=1, help="Batch size for compiled network")
+    parser.add_argument("--batch-size", type=int, default=32, help="Batch size for compiled network")
     parser.add_argument(
         "--preset",
         type=str,

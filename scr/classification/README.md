@@ -15,6 +15,7 @@ python /Users/user/tomsk/scr/classification/run_full_h1_classification.py
 ```bash
 python /Users/user/tomsk/scr/classification/run_full_h1_classification.py \
   --experiment-suffix h1tpu \
+  --batch-size 32 \
   --num-calibration-images 512 \
   --calibration-chunk-size 128 \
   --percentile 99.9
