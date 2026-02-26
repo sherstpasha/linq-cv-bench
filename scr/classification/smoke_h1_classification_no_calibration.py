@@ -1,7 +1,7 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image
@@ -44,8 +44,8 @@ def _as_graph_def(converted_model: Any, tf_module: Any) -> Any:
     raise TypeError(f"Unsupported converted model type: {type(converted_model)}")
 
 
-def preprocess(image: Image.Image) -> np.ndarray:
-    # Manual H1 example preprocessing for ResNet-like classification (NHWC).
+def preprocess(image: Image.Image, expected_input_shape: Optional[List[Optional[int]]]) -> np.ndarray:
+    # Manual H1-like preprocessing for ResNet classification.
     image = image.convert("RGB")
     width, height = image.size
     min_dim = int(min(height, width) * 0.85)
@@ -53,9 +53,20 @@ def preprocess(image: Image.Image) -> np.ndarray:
     crop_left = (width - min_dim) // 2
     image = image.crop((crop_left, crop_top, crop_left + min_dim, crop_top + min_dim))
     image = image.resize((224, 224))
-    tensor = np.asarray(image).astype(np.float32)
-    tensor = tensor - np.array([123.68, 116.779, 103.939], dtype=np.float32)
-    return np.expand_dims(tensor, axis=0)
+    tensor_hwc = np.asarray(image).astype(np.float32)
+    tensor_hwc = tensor_hwc - np.array([123.68, 116.779, 103.939], dtype=np.float32)
+
+    # Default to NHWC if shape is unknown.
+    if not expected_input_shape or len(expected_input_shape) != 4:
+        return np.expand_dims(tensor_hwc, axis=0)
+
+    # (N, C, H, W) -> NCHW
+    if expected_input_shape[1] == 3:
+        tensor_chw = np.transpose(tensor_hwc, (2, 0, 1))
+        return np.expand_dims(tensor_chw, axis=0)
+
+    # (N, H, W, C) -> NHWC
+    return np.expand_dims(tensor_hwc, axis=0)
 
 
 def _ensure_tensor_name(name: str) -> str:
@@ -103,8 +114,12 @@ def _guess_output_tensor_name(graph: Any) -> str:
             score = 0
             if any(s in name for s in preferred_substrings):
                 score += 10
+            if len(t.consumers()) == 0:
+                score += 8
             if shape and len(shape) >= 2 and (shape[-1] is None or shape[-1] >= 10):
                 score += 3
+            if shape and len(shape) >= 2 and shape[-1] in (1000, 1001):
+                score += 6
             if op.type in ("Softmax", "Identity", "BiasAdd", "MatMul", "Reshape"):
                 score += 1
             candidates.append((score, t.name))
@@ -125,7 +140,12 @@ def find_first_image(data_root: Path) -> Path:
     raise FileNotFoundError(f"No image files found under: {data_root}")
 
 
-def run_inference(graph_def: Any, input_tensor_name: str, output_tensor_name: str, input_tensor: np.ndarray) -> np.ndarray:
+def run_inference(
+    graph_def: Any,
+    input_tensor_name: str,
+    output_tensor_name: str,
+    input_tensor: np.ndarray,
+) -> Tuple[np.ndarray, str, str, List[Optional[int]]]:
     import tensorflow as tf  # imported lazily to keep script import light
 
     graph = tf.Graph()
@@ -144,9 +164,11 @@ def run_inference(graph_def: Any, input_tensor_name: str, output_tensor_name: st
         print(f"Resolved output tensor: {output_tensor_name} -> {output_name}")
     input_tensor_ref = graph.get_tensor_by_name(input_name)
     output_tensor_ref = graph.get_tensor_by_name(output_name)
+    input_shape = input_tensor_ref.shape.as_list()
 
     with tf.compat.v1.Session(graph=graph) as sess:
-        return sess.run(output_tensor_ref, feed_dict={input_tensor_ref: input_tensor})
+        output = sess.run(output_tensor_ref, feed_dict={input_tensor_ref: input_tensor})
+    return output, input_name, output_name, input_shape
 
 
 def main() -> None:
@@ -172,10 +194,20 @@ def main() -> None:
     converted = onnx_to_tf(onnx_model)
     graph_def = _as_graph_def(converted, tf)
 
-    with Image.open(args.image_path) as image:
-        input_tensor = preprocess(image)
+    # First pass to discover actual input tensor shape in converted graph.
+    # Build a temporary graph just for shape resolution.
+    import tensorflow as tf
+    temp_graph = tf.Graph()
+    with temp_graph.as_default():
+        tf.graph_util.import_graph_def(graph_def, name="")
+    resolved_input_name = _resolve_tensor_name(temp_graph, args.input_tensor_name)
+    resolved_input_shape = temp_graph.get_tensor_by_name(resolved_input_name).shape.as_list()
+    print(f"Input tensor shape: {resolved_input_shape}")
 
-    output = run_inference(
+    with Image.open(args.image_path) as image:
+        input_tensor = preprocess(image, resolved_input_shape)
+
+    output, resolved_input_name, resolved_output_name, _ = run_inference(
         graph_def=graph_def,
         input_tensor_name=args.input_tensor_name,
         output_tensor_name=args.output_tensor_name,
@@ -187,8 +219,9 @@ def main() -> None:
     result = {
         "model_path": args.model_path.as_posix(),
         "image_path": args.image_path.as_posix(),
-        "input_tensor_name": args.input_tensor_name,
-        "output_tensor_name": args.output_tensor_name,
+        "input_tensor_name": resolved_input_name,
+        "output_tensor_name": resolved_output_name,
+        "input_tensor_shape": resolved_input_shape,
         "output_shape": list(np.asarray(output).shape),
         "predicted_class_top1": int(top5[0]),
         "predicted_class_top5": [int(x) for x in top5.tolist()],
