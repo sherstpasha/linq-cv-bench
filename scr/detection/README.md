@@ -5,3 +5,14 @@ python /Users/user/tomsk/scr/detection/export_yolov5su_to_onnx.py
 python /Users/user/tomsk/scr/detection/infer_yolov5_onnx.py --providers CoreMLExecutionProvider,CPUExecutionProvider
 python /Users/user/tomsk/scr/detection/metrics.py
 ```
+
+# Detection (H1 Quantization)
+
+```bash
+python /Users/user/tomsk/scr/detection/quantize_yolov5_h1.py
+python /Users/user/tomsk/scr/detection/compile_yolov5_h1.py --preset O5 --batch-size 1
+python /Users/user/tomsk/scr/detection/infer_yolov5_h1_tpu.py
+python /Users/user/tomsk/scr/detection/metrics.py \
+  --predictions /Users/user/tomsk/experiments/detection/predictions_h1_tpu.json \
+  --output-json /Users/user/tomsk/experiments/detection/metrics_h1_tpu.json
+```
