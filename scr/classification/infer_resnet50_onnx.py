@@ -52,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-dir", type=Path, default=REPO_ROOT / "data/evaluation/imagenet")
     parser.add_argument("--predictions-out", type=Path, default=REPO_ROOT / "experiments/classification/predictions.jsonl")
     parser.add_argument("--timing-out", type=Path, default=REPO_ROOT / "experiments/classification/inference_timing.json")
-    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--warmup-batches", type=int, default=3)

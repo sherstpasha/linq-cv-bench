@@ -51,7 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-quantized-graph-pb", action="store_true")
 
     parser.add_argument("--compile-preset", choices=["O1", "O5", "DEFAULT"], default="O5")
-    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--device", type=str, default=None)
 
     parser.add_argument("--conf-thres", type=float, default=0.001)

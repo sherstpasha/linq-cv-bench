@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-tensor-name", type=str, default=None, help="Override output tensor name")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--warmup-images", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--batch-size", type=int, default=8)
     return parser.parse_args()
 
 

@@ -13,7 +13,7 @@ python /Users/user/tomsk/scr/split_datasets_for_calibration.py --force
 python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
   --python /Users/user/tomsk/.venv/bin/python \
   --providers CUDAExecutionProvider,CPUExecutionProvider \
-  --batch-size 32
+  --batch-size 8
 ```
 
 ## H1 Smoke Test (No Calibration, Classification)
@@ -55,7 +55,7 @@ Example:
 python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
   --python /Users/user/tomsk/.venv/bin/python \
   --providers CPUExecutionProvider \
-  --batch-size 16
+  --batch-size 8
 ```
 
 ## Quick Test

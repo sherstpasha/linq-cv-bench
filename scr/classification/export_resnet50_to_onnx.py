@@ -11,7 +11,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export torchvision ResNet-50 to ONNX")
     parser.add_argument("--output", type=Path, default=REPO_ROOT / "experiments/classification/resnet50.onnx")
     parser.add_argument("--opset", type=int, default=18)
-    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--no-pretrained", action="store_true")
     return parser.parse_args()
 

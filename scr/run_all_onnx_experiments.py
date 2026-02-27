@@ -158,7 +158,7 @@ def parse_args() -> argparse.Namespace:
         help="Root directory for models, predictions, timing and metrics outputs",
     )
     p.add_argument("--providers", type=str, default=None, help="ONNX providers for all tasks")
-    p.add_argument("--batch-size", type=int, default=32, help="Batch size for supported ONNX inference scripts")
+    p.add_argument("--batch-size", type=int, default=8, help="Batch size for supported ONNX inference scripts")
     p.add_argument("--classification-limit", type=int, default=0)
     p.add_argument("--detection-limit", type=int, default=0)
     p.add_argument("--segmentation-limit", type=int, default=0)

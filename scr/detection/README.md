@@ -3,11 +3,11 @@
 ```bash
 python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
   --providers CPUExecutionProvider \
-  --batch-size 32
+  --batch-size 8
 
 python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
   --providers CUDAExecutionProvider,CPUExecutionProvider \
-  --batch-size 32
+  --batch-size 8
 ```
 
 ```bash
@@ -24,7 +24,7 @@ python /Users/user/tomsk/scr/detection/run_full_h1_detection.py
 
 ```bash
 python /Users/user/tomsk/scr/detection/quantize_yolov5_h1.py
-python /Users/user/tomsk/scr/detection/compile_yolov5_h1.py --preset O5 --batch-size 1
+python /Users/user/tomsk/scr/detection/compile_yolov5_h1.py --preset O5 --batch-size 8
 python /Users/user/tomsk/scr/detection/infer_yolov5_h1_tpu.py
 python /Users/user/tomsk/scr/detection/metrics.py \
   --predictions /Users/user/tomsk/experiments/detection/predictions_h1_tpu.json \
