@@ -85,16 +85,55 @@ def build_calibration_tensor_memmap(
     return batch, memmap_path
 
 
+def force_static_onnx_input_shape(
+    onnx_model: Any,
+    input_name: str,
+    height: int,
+    width: int,
+) -> None:
+    for value_info in onnx_model.graph.input:
+        if value_info.name != input_name:
+            continue
+        dims = value_info.type.tensor_type.shape.dim
+        if len(dims) != 4:
+            raise RuntimeError(
+                f"Expected 4D input tensor for segmentation, got {len(dims)} dims for '{input_name}'"
+            )
+        dims[0].dim_value = 1
+        dims[1].dim_value = 3
+        dims[2].dim_value = int(height)
+        dims[3].dim_value = int(width)
+        return
+    raise KeyError(f"Input tensor '{input_name}' not found in ONNX graph")
+
+
 def load_converted_graph(onnx_model: Any) -> Tuple[Any, Dict[str, str]]:
     try:
         from tpu_framework import onnx_to_tf  # type: ignore
     except Exception:
         from onnx_direct import onnx_to_tf  # type: ignore
 
-    try:
-        converted = onnx_to_tf(onnx_model=onnx_model, try_simplify=True)
-    except TypeError:
-        converted = onnx_to_tf(onnx_model)
+    # Different framework versions support different signatures/behaviors.
+    converted = None
+    errors: List[str] = []
+    for kwargs in (
+        {"onnx_model": onnx_model, "try_simplify": True},
+        {"onnx_model": onnx_model, "try_simplify": False},
+        {"onnx_model": onnx_model},
+    ):
+        try:
+            converted = onnx_to_tf(**kwargs)
+            break
+        except TypeError:
+            try:
+                converted = onnx_to_tf(onnx_model)
+                break
+            except Exception as e:
+                errors.append(f"{kwargs}: {type(e).__name__}: {e}")
+        except Exception as e:
+            errors.append(f"{kwargs}: {type(e).__name__}: {e}")
+    if converted is None:
+        raise RuntimeError("Failed to convert ONNX to TF graph: " + " | ".join(errors))
 
     if isinstance(converted, tuple):
         tf_graph = converted[0]
@@ -195,6 +234,14 @@ def main() -> None:
     onnx_output_default = onnx_model.graph.output[0].name
     onnx_input_name = args.input_tensor_name or onnx_input_default
     onnx_output_name = args.output_tensor_name or onnx_output_default
+
+    # tpu_framework/onnx_direct conversion path used in H1 expects static shapes.
+    force_static_onnx_input_shape(
+        onnx_model=onnx_model,
+        input_name=onnx_input_name,
+        height=args.height,
+        width=args.width,
+    )
 
     converted_graph, mapping = load_converted_graph(onnx_model)
     graph_def = to_graph_def(converted_graph)
