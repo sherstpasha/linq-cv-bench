@@ -35,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--height", type=int, default=520)
     parser.add_argument("--width", type=int, default=520)
+    parser.add_argument("--num-classes", type=int, default=21)
     parser.add_argument("--device", type=str, default=None, help="TPU device path, e.g. /dev/tpu3")
     return parser.parse_args()
 
@@ -208,13 +209,24 @@ def to_logits_shape(logits: np.ndarray, expected_batch: int) -> np.ndarray:
     if logits.ndim != 4:
         raise RuntimeError(f"Unexpected segmentation output shape: {logits.shape}")
 
-    # Expected FCN output is NCHW. If NHWC detected, transpose.
-    if logits.shape[1] <= 24 and logits.shape[-1] > 24:
-        logits = np.transpose(logits, (0, 3, 1, 2))
-
     if logits.shape[0] < expected_batch:
         raise RuntimeError(f"Output batch smaller than expected: output={logits.shape}, expected={expected_batch}")
     return logits
+
+
+def logits_to_mask(sample_logits: np.ndarray, num_classes: int) -> np.ndarray:
+    if sample_logits.ndim != 3:
+        raise RuntimeError(f"Unexpected per-sample logits shape: {sample_logits.shape}")
+
+    # Prefer exact class-channel match for robust NCHW/NHWC handling.
+    if sample_logits.shape[0] == num_classes:
+        class_axis = 0
+    elif sample_logits.shape[-1] == num_classes:
+        class_axis = 2
+    else:
+        # Fallback: classes are usually the smallest dimension.
+        class_axis = int(np.argmin(sample_logits.shape))
+    return np.argmax(sample_logits, axis=class_axis).astype(np.uint8)
 
 
 def main() -> None:
@@ -288,7 +300,7 @@ def main() -> None:
                     valid_logits = logits[: len(batch_samples)]
 
                     for sample, sample_logits, orig_hw in zip(batch_samples, valid_logits, original_sizes):
-                        pred = np.argmax(sample_logits, axis=0).astype(np.uint8)
+                        pred = logits_to_mask(sample_logits, num_classes=args.num_classes)
                         pred_img = Image.fromarray(pred)
                         if pred.shape != orig_hw:
                             pred_img = pred_img.resize((orig_hw[1], orig_hw[0]), resample=Image.NEAREST)

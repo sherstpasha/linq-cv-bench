@@ -169,6 +169,8 @@ def main() -> None:
         str(args.height),
         "--width",
         str(args.width),
+        "--num-classes",
+        str(args.num_classes),
     ]
     if args.input_tensor_name:
         infer_cmd += ["--input-tensor-name", args.input_tensor_name]

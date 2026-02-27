@@ -28,7 +28,7 @@ VOC_CLASSES: List[str] = [
 
 
 def update_confusion(conf: np.ndarray, gt: np.ndarray, pred: np.ndarray, num_classes: int, ignore_index: int) -> None:
-    valid = (gt != ignore_index) & (gt >= 0) & (gt < num_classes)
+    valid = (gt != ignore_index) & (gt >= 0) & (gt < num_classes) & (pred >= 0) & (pred < num_classes)
     if not np.any(valid):
         return
     hist = np.bincount(
