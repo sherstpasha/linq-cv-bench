@@ -24,6 +24,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--warmup-images", type=int, default=5)
     parser.add_argument("--providers", type=str, default=None)
+    parser.add_argument("--height", type=int, default=520)
+    parser.add_argument("--width", type=int, default=520)
+    parser.add_argument("--num-classes", type=int, default=21)
     return parser.parse_args()
 
 
@@ -42,10 +45,23 @@ def load_ids(split_file: Path, limit: int) -> List[str]:
     return ids[:limit] if limit > 0 else ids
 
 
-def preprocess(image: Image.Image) -> np.ndarray:
+def preprocess(image: Image.Image, width: int, height: int) -> np.ndarray:
+    image = image.resize((width, height), Image.BILINEAR)
     arr = np.asarray(image, dtype=np.float32) / 255.0
     arr = (arr - IMAGENET_MEAN) / IMAGENET_STD
     return np.expand_dims(arr.transpose(2, 0, 1), axis=0).astype(np.float32)
+
+
+def logits_to_mask(sample_logits: np.ndarray, num_classes: int) -> np.ndarray:
+    if sample_logits.ndim != 3:
+        raise RuntimeError(f"Unexpected per-sample logits shape: {sample_logits.shape}")
+    if sample_logits.shape[0] == num_classes:
+        class_axis = 0
+    elif sample_logits.shape[-1] == num_classes:
+        class_axis = 2
+    else:
+        class_axis = int(np.argmin(sample_logits.shape))
+    return np.argmax(sample_logits, axis=class_axis).astype(np.uint8)
 
 
 def main() -> None:
@@ -75,14 +91,14 @@ def main() -> None:
 
     for i, image_id in enumerate(tqdm(ids, desc="Inference")):
         image = Image.open(jpeg_dir / f"{image_id}.jpg").convert("RGB")
-        x = preprocess(image)
+        x = preprocess(image, width=args.width, height=args.height)
         t0 = time.perf_counter()
         logits = session.run(None, {input_name: x})[0]
         t1 = time.perf_counter()
         if i >= args.warmup_images:
             infer_time += (t1 - t0)
             measured_images += 1
-        pred = np.argmax(logits[0], axis=0).astype(np.uint8)
+        pred = logits_to_mask(np.asarray(logits[0]), num_classes=args.num_classes)
         Image.fromarray(pred).save(args.predictions_dir / f"{image_id}.png")
 
     timing = {
@@ -93,6 +109,7 @@ def main() -> None:
         "throughput_img_per_sec": measured_images / max(infer_time, 1e-9),
         "predictions_dir": args.predictions_dir.as_posix(),
         "split_file": split_file.as_posix(),
+        "input_size": [args.height, args.width],
     }
     with args.timing_out.open("w", encoding="utf-8") as f:
         json.dump(timing, f, indent=2)

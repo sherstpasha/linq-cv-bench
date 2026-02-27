@@ -162,6 +162,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--classification-limit", type=int, default=0)
     p.add_argument("--detection-limit", type=int, default=0)
     p.add_argument("--segmentation-limit", type=int, default=0)
+    p.add_argument("--segmentation-height", type=int, default=520, help="Fixed input height for segmentation ONNX export/infer")
+    p.add_argument("--segmentation-width", type=int, default=520, help="Fixed input width for segmentation ONNX export/infer")
     p.add_argument("--skip-classification-export", action="store_true")
     p.add_argument("--skip-detection-export", action="store_true")
     p.add_argument("--skip-segmentation-export", action="store_true")
@@ -321,7 +323,18 @@ def main() -> None:
     run(det_metrics)
 
     if not args.skip_segmentation_export:
-        run([py, (SCR / "segmentation/export_fcn_resnet50_to_onnx.py").as_posix(), "--output", seg_model.as_posix()])
+        run(
+            [
+                py,
+                (SCR / "segmentation/export_fcn_resnet50_to_onnx.py").as_posix(),
+                "--output",
+                seg_model.as_posix(),
+                "--height",
+                str(args.segmentation_height),
+                "--width",
+                str(args.segmentation_width),
+            ]
+        )
     seg_infer = [
         py,
         (SCR / "segmentation/infer_fcn_resnet50_onnx.py").as_posix(),
@@ -331,6 +344,10 @@ def main() -> None:
         seg_preds_dir.as_posix(),
         "--timing-out",
         seg_timing.as_posix(),
+        "--height",
+        str(args.segmentation_height),
+        "--width",
+        str(args.segmentation_width),
     ]
     seg_metrics = [
         py,
@@ -367,6 +384,7 @@ def main() -> None:
         "segmentation": {
             "timing": load_json(seg_timing),
             "metrics": load_json(seg_metrics_json),
+            "input_size": [args.segmentation_height, args.segmentation_width],
         },
     }
 
