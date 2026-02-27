@@ -26,6 +26,27 @@ def main() -> None:
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
 
     coco = COCO(args.ann_file.as_posix())
+    try:
+        pred_rows = json.loads(args.predictions.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise RuntimeError(f"Failed to read predictions JSON: {args.predictions}") from e
+
+    if not isinstance(pred_rows, list):
+        raise RuntimeError(f"Predictions file must be a JSON list: {args.predictions}")
+
+    if len(pred_rows) == 0:
+        result = {
+            "ann_file": args.ann_file.as_posix(),
+            "predictions": args.predictions.as_posix(),
+            "num_images": args.limit if args.limit > 0 else len(coco.getImgIds()),
+            "metrics": {k: 0.0 for k in METRIC_KEYS},
+            "note": "Predictions are empty; metrics were set to 0.0.",
+        }
+        with args.output_json.open("w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2)
+        print(json.dumps(result, indent=2))
+        return
+
     dt = coco.loadRes(args.predictions.as_posix())
     ev = COCOeval(coco, dt, "bbox")
     if args.limit > 0:

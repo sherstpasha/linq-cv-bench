@@ -37,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-images", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--device", type=str, default=None, help="TPU device path like /dev/tpu0 (default: first available)")
+    parser.add_argument("--debug-probe", action="store_true", help="Print detailed probe output tensor stats")
     return parser.parse_args()
 
 
@@ -186,6 +187,20 @@ def pick_output(output_dict: Dict[str, np.ndarray], preferred_name: Optional[str
     raise RuntimeError(f"Cannot resolve output tensor. Keys: {list(output_dict.keys())}")
 
 
+def print_probe_stats(output_dict: Dict[str, np.ndarray]) -> None:
+    print("Probe output stats:")
+    for k, v in output_dict.items():
+        arr = np.asarray(v)
+        if arr.size == 0:
+            print(f"  - {k}: shape={arr.shape}, dtype={arr.dtype}, empty")
+            continue
+        arr_f = arr.astype(np.float32, copy=False)
+        print(
+            f"  - {k}: shape={arr.shape}, dtype={arr.dtype}, "
+            f"min={float(np.min(arr_f)):.6f}, max={float(np.max(arr_f)):.6f}, mean={float(np.mean(arr_f)):.6f}"
+        )
+
+
 def normalize_prediction_shape(pred: np.ndarray) -> np.ndarray:
     if pred.ndim != 3:
         raise ValueError(f"Unexpected prediction rank: {pred.ndim}, shape={pred.shape}")
@@ -254,6 +269,8 @@ def main() -> None:
                 if preferred_output:
                     print(f"Preferred output tensor: {preferred_output}")
                 print(f"Probe output keys: {list(probe_out.keys())}")
+                if args.debug_probe:
+                    print_probe_stats(probe_out)
 
                 num_batches = (len(img_ids) + args.batch_size - 1) // args.batch_size
                 processed_images = 0

@@ -57,14 +57,15 @@ def main() -> None:
     suffix = args.experiment_suffix.strip()
     if not suffix:
         raise RuntimeError("--experiment-suffix must not be empty")
+    experiment_tag = f"experiment_{suffix}_b{args.batch_size}"
 
-    qm_path = output_dir / f"yolov5su_{suffix}_quantized.qm"
-    tpu_path = output_dir / f"yolov5su_{suffix}.tpu"
-    predictions_path = output_dir / f"predictions_{suffix}.json"
-    timing_path = output_dir / f"inference_timing_{suffix}.json"
-    metrics_path = output_dir / f"metrics_{suffix}.json"
-    quantized_pb_path = output_dir / f"yolov5su_{suffix}_quantized.pb"
-    run_params_path = output_dir / f"run_params_{suffix}.json"
+    qm_path = output_dir / f"yolov5su_{experiment_tag}_quantized.qm"
+    tpu_path = output_dir / f"yolov5su_{experiment_tag}.tpu"
+    predictions_path = output_dir / f"predictions_{experiment_tag}.json"
+    timing_path = output_dir / f"inference_timing_{experiment_tag}.json"
+    metrics_path = output_dir / f"metrics_{experiment_tag}.json"
+    quantized_pb_path = output_dir / f"yolov5su_{experiment_tag}_quantized.pb"
+    run_params_path = output_dir / f"run_params_{experiment_tag}.json"
 
     quantize_cmd = [
         py,
@@ -162,6 +163,7 @@ def main() -> None:
         "pipeline": "detection_h1_full",
         "python": py,
         "experiment_suffix": suffix,
+        "experiment_tag": experiment_tag,
         "params": {
             "model_path": args.model_path.as_posix(),
             "calibration_dir": args.calibration_dir.as_posix(),
