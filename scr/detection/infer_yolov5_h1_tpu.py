@@ -201,6 +201,34 @@ def print_probe_stats(output_dict: Dict[str, np.ndarray]) -> None:
         )
 
 
+def print_prediction_channel_stats(pred: np.ndarray) -> None:
+    arr = np.asarray(pred).astype(np.float32, copy=False)
+    if arr.ndim != 3:
+        print(f"Prediction channel stats skipped: unexpected rank {arr.ndim}, shape={arr.shape}")
+        return
+    if arr.shape[1] < 6:
+        print(f"Prediction channel stats skipped: channel dim too small, shape={arr.shape}")
+        return
+
+    bbox = arr[:, 0:4, :]
+    cls = arr[:, 4:, :]
+    cls_max = np.max(cls, axis=1)  # [B, N]
+
+    print("Prediction channel stats (pre-NMS):")
+    print(
+        "  bbox[0:4]: "
+        f"min={float(np.min(bbox)):.6f}, max={float(np.max(bbox)):.6f}, mean={float(np.mean(bbox)):.6f}"
+    )
+    print(
+        "  cls[4:]: "
+        f"min={float(np.min(cls)):.6f}, max={float(np.max(cls)):.6f}, mean={float(np.mean(cls)):.6f}"
+    )
+    print(
+        "  max_class_score_per_anchor: "
+        f"min={float(np.min(cls_max)):.6f}, max={float(np.max(cls_max)):.6f}, mean={float(np.mean(cls_max)):.6f}"
+    )
+
+
 def normalize_prediction_shape(pred: np.ndarray) -> np.ndarray:
     if pred.ndim != 3:
         raise ValueError(f"Unexpected prediction rank: {pred.ndim}, shape={pred.shape}")
@@ -264,13 +292,14 @@ def main() -> None:
                 print(f"Runtime input hints: {runtime_hints}")
 
                 runtime_input_name, probe_out = resolve_runtime_input_name(inference, preferred_input, probe_x, runtime_hints)
-                _ = pick_output(probe_out, preferred_output)
+                probe_pred = normalize_prediction_shape(np.asarray(pick_output(probe_out, preferred_output)))
                 print(f"Resolved runtime input tensor: {runtime_input_name}")
                 if preferred_output:
                     print(f"Preferred output tensor: {preferred_output}")
                 print(f"Probe output keys: {list(probe_out.keys())}")
                 if args.debug_probe:
                     print_probe_stats(probe_out)
+                    print_prediction_channel_stats(probe_pred)
 
                 num_batches = (len(img_ids) + args.batch_size - 1) // args.batch_size
                 processed_images = 0
