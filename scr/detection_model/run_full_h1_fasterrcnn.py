@@ -98,7 +98,7 @@ def main() -> None:
                 "--width",
                 str(args.width),
                 "--batch-size",
-                str(args.batch_size),
+                "1",
                 "--max-det",
                 str(args.max_det),
             ]

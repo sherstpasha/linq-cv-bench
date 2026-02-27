@@ -88,7 +88,13 @@ def main() -> None:
     active_providers = session.get_providers()
     print(f"Active providers: {active_providers}")
 
-    input_meta = session.get_inputs()[0]
+    model_inputs = session.get_inputs()
+    if not model_inputs:
+        raise RuntimeError(
+            "ONNX model has no graph inputs in ORT session. "
+            "Re-export model with `export_fasterrcnn_to_onnx.py` (batch=1 export mode)."
+        )
+    input_meta = model_inputs[0]
     input_name = input_meta.name
     input_shape = list(input_meta.shape)
 

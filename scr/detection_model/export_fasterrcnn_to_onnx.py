@@ -23,20 +23,20 @@ class FasterRCNNExportWrapper(nn.Module):
         return torch.cat([det, pad], dim=0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        outputs = self.model([img for img in x])
-        batches = []
-        for out in outputs:
-            boxes = out["boxes"]
-            scores = out["scores"]
-            labels = out["labels"].to(dtype=boxes.dtype)
-            if self.score_threshold > 0:
-                keep = scores >= self.score_threshold
-                boxes = boxes[keep]
-                scores = scores[keep]
-                labels = labels[keep]
-            det = torch.cat([boxes, scores.unsqueeze(1), labels.unsqueeze(1)], dim=1) if boxes.numel() > 0 else boxes.new_zeros((0, 6))
-            batches.append(self._pad_detections(det))
-        return torch.stack(batches, dim=0)
+        # ONNX export path for torchvision detection is far more stable with batch=1.
+        # We export [1, max_det, 6] tensor: [x1, y1, x2, y2, score, coco_label_id].
+        img = x[0]
+        out = self.model([img])[0]
+        boxes = out["boxes"]
+        scores = out["scores"]
+        labels = out["labels"].to(dtype=boxes.dtype)
+        if self.score_threshold > 0:
+            keep = scores >= self.score_threshold
+            boxes = boxes[keep]
+            scores = scores[keep]
+            labels = labels[keep]
+        det = torch.cat([boxes, scores.unsqueeze(1), labels.unsqueeze(1)], dim=1) if boxes.numel() > 0 else boxes.new_zeros((0, 6))
+        return self._pad_detections(det).unsqueeze(0)
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,11 +56,15 @@ def main() -> None:
     args = parse_args()
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
+    if args.batch_size != 1:
+        print(f"Requested export batch-size={args.batch_size}, forcing batch-size=1 for stable FasterRCNN ONNX export.")
+    export_batch_size = 1
+
     weights = None if args.no_pretrained else FasterRCNN_ResNet50_FPN_Weights.COCO_V1
     model = fasterrcnn_resnet50_fpn(weights=weights, box_detections_per_img=args.max_det)
     wrapped = FasterRCNNExportWrapper(model.eval(), max_det=args.max_det, score_threshold=args.score_thres)
 
-    dummy_input = torch.rand(args.batch_size, 3, args.height, args.width, dtype=torch.float32)
+    dummy_input = torch.rand(export_batch_size, 3, args.height, args.width, dtype=torch.float32)
     with torch.no_grad():
         torch.onnx.export(
             wrapped,
