@@ -24,14 +24,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--calibration-chunk-size", type=int, default=128, help="Images per preprocessing chunk")
     parser.add_argument("--img-size", type=int, default=640, help="Letterbox target size")
     parser.add_argument("--percentile", type=float, default=100.0)
-    parser.add_argument("--no-fine-tune", action="store_true", help="Disable threshold fine-tuning after calibration")
-    parser.add_argument("--fine-tune-epochs", type=int, default=10, help="Fine-tuning epochs for quantization thresholds")
-    parser.add_argument(
-        "--fine-tune-dir",
-        type=Path,
-        default=None,
-        help="Working directory for fine-tuning artifacts (default: <output-qm-dir>/fine_tune_yolo)",
-    )
     parser.add_argument("--batch-axis", type=int, default=0)
     parser.add_argument("--save-quantized-graph-pb", type=Path, default=None, help="Optional .pb output from quantized model")
     return parser.parse_args()
@@ -257,22 +249,6 @@ def main() -> None:
             thresholds = regular_model.calibrate(calibration_data=calibration_dict, percentile=args.percentile)
         except TypeError:
             thresholds = regular_model.calibrate(calibration_data=calibration_dict)
-
-        if not args.no_fine_tune:
-            if args.fine_tune_epochs <= 0:
-                raise RuntimeError("--fine-tune-epochs must be > 0")
-            fine_tune_dir = args.fine_tune_dir or (args.output_qm.parent / "fine_tune_yolo")
-            fine_tune_dir.mkdir(parents=True, exist_ok=True)
-            print(f"Fine-tuning thresholds: epochs={args.fine_tune_epochs}, dir={fine_tune_dir}")
-            try:
-                thresholds = regular_model.fine_tune(
-                    thresholds=thresholds,
-                    fine_tuning_epochs=args.fine_tune_epochs,
-                    fine_tuning_data=calibration_dict,
-                    working_dir=fine_tune_dir.as_posix(),
-                )
-            except Exception as e:
-                print(f"Fine-tune failed, fallback to calibrated thresholds. reason={e}")
 
         quantized_model = regular_model.quantize(thresholds)
 
