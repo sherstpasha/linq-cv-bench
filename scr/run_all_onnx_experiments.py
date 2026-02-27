@@ -25,6 +25,24 @@ def load_json(path: Path) -> Dict[str, Any]:
         return json.load(f)
 
 
+def normalize_provider_tag(providers: str) -> str:
+    parts = [p.strip() for p in providers.split(",") if p.strip()]
+    if not parts:
+        return "auto"
+    out = []
+    for p in parts:
+        low = p.lower()
+        if "cuda" in low:
+            out.append("cuda")
+        elif "cpu" in low:
+            out.append("cpu")
+        elif "coreml" in low:
+            out.append("coreml")
+        else:
+            out.append(low.replace("executionprovider", ""))
+    return "-".join(out)
+
+
 def collect_environment_info(py: str) -> Dict[str, Any]:
     probe = r"""
 import importlib
@@ -139,9 +157,8 @@ def parse_args() -> argparse.Namespace:
         default=REPO_ROOT / "experiments",
         help="Root directory for models, predictions, timing and metrics outputs",
     )
-    p.add_argument("--classification-providers", type=str, default=None, help="ONNX providers for classification infer")
-    p.add_argument("--detection-providers", type=str, default=None, help="ONNX providers for detection infer")
-    p.add_argument("--segmentation-providers", type=str, default=None, help="ONNX providers for segmentation infer")
+    p.add_argument("--providers", type=str, default=None, help="ONNX providers for all tasks")
+    p.add_argument("--batch-size", type=int, default=32, help="Batch size for supported ONNX inference scripts")
     p.add_argument("--classification-limit", type=int, default=0)
     p.add_argument("--detection-limit", type=int, default=0)
     p.add_argument("--segmentation-limit", type=int, default=0)
@@ -174,8 +191,15 @@ def ensure_path_exists(path: Path, hint: str) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.batch_size <= 0:
+        raise RuntimeError("--batch-size must be > 0")
     os.environ["YOLO_AUTOINSTALL"] = "False"
-    exp_dir = args.experiments_dir
+    providers = args.providers or ""
+    providers_lc = providers.lower()
+    detection_coreml_mode = "coreml" in providers_lc
+    provider_tag = normalize_provider_tag(providers)
+    experiment_tag = f"experiment_{provider_tag}_b{args.batch_size}"
+    exp_dir = args.experiments_dir / experiment_tag
     cls_dir = exp_dir / "classification"
     det_dir = exp_dir / "detection"
     seg_dir = exp_dir / "segmentation"
@@ -202,6 +226,12 @@ def main() -> None:
     print(f"VIRTUAL_ENV: {os.environ.get('VIRTUAL_ENV', '(not set)')}")
     print("YOLO_AUTOINSTALL: False")
     print(f"Experiments dir: {exp_dir}")
+    print(f"Experiment tag: {experiment_tag}")
+    if detection_coreml_mode and args.batch_size != 1:
+        print(
+            "CoreML provider detected: detection will use batch_size=1 and static ONNX export "
+            f"(requested global batch_size={args.batch_size})."
+        )
     ensure_path_exists(REPO_ROOT / "data/evaluation/imagenet/val_map.txt", "Run split_datasets_for_calibration.py first.")
     ensure_path_exists(
         REPO_ROOT / "data/evaluation/MSCOCO2017/annotations/instances_val2017.json",
@@ -218,7 +248,16 @@ def main() -> None:
     environment = collect_environment_info(py)
 
     if not args.skip_classification_export:
-        run([py, (SCR / "classification/export_resnet50_to_onnx.py").as_posix(), "--output", cls_model.as_posix()])
+        run(
+            [
+                py,
+                (SCR / "classification/export_resnet50_to_onnx.py").as_posix(),
+                "--output",
+                cls_model.as_posix(),
+                "--batch-size",
+                str(args.batch_size),
+            ]
+        )
     cls_infer = [
         py,
         (SCR / "classification/infer_resnet50_onnx.py").as_posix(),
@@ -228,9 +267,11 @@ def main() -> None:
         cls_preds.as_posix(),
         "--timing-out",
         cls_timing.as_posix(),
+        "--batch-size",
+        str(args.batch_size),
     ]
-    if args.classification_providers:
-        cls_infer += ["--providers", args.classification_providers]
+    if providers:
+        cls_infer += ["--providers", providers]
     if args.classification_limit > 0:
         cls_infer += ["--limit", str(args.classification_limit)]
     run(cls_infer)
@@ -246,7 +287,11 @@ def main() -> None:
     )
 
     if not args.skip_detection_export:
-        run([py, (SCR / "detection/export_yolov5su_to_onnx.py").as_posix(), "--output", det_model.as_posix()])
+        det_export = [py, (SCR / "detection/export_yolov5su_to_onnx.py").as_posix(), "--output", det_model.as_posix()]
+        if args.batch_size > 1 and not detection_coreml_mode:
+            det_export.append("--dynamic")
+        run(det_export)
+    det_batch_size = 1 if detection_coreml_mode else args.batch_size
     det_infer = [
         py,
         (SCR / "detection/infer_yolov5_onnx.py").as_posix(),
@@ -256,6 +301,8 @@ def main() -> None:
         det_preds.as_posix(),
         "--timing-out",
         det_timing.as_posix(),
+        "--batch-size",
+        str(det_batch_size),
     ]
     det_metrics = [
         py,
@@ -265,8 +312,8 @@ def main() -> None:
         "--output-json",
         det_metrics_json.as_posix(),
     ]
-    if args.detection_providers:
-        det_infer += ["--providers", args.detection_providers]
+    if providers:
+        det_infer += ["--providers", providers]
     if args.detection_limit > 0:
         det_infer += ["--limit", str(args.detection_limit)]
         det_metrics += ["--limit", str(args.detection_limit)]
@@ -293,8 +340,8 @@ def main() -> None:
         "--output-json",
         seg_metrics_json.as_posix(),
     ]
-    if args.segmentation_providers:
-        seg_infer += ["--providers", args.segmentation_providers]
+    if providers:
+        seg_infer += ["--providers", providers]
     if args.segmentation_limit > 0:
         seg_infer += ["--limit", str(args.segmentation_limit)]
         seg_metrics += ["--limit", str(args.segmentation_limit)]
@@ -303,6 +350,11 @@ def main() -> None:
 
     summary = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "experiment_tag": experiment_tag,
+        "batch_size": args.batch_size,
+        "detection_batch_size": det_batch_size,
+        "detection_coreml_mode": detection_coreml_mode,
+        "providers": providers or None,
         "environment": environment,
         "classification": {
             "timing": load_json(cls_timing),

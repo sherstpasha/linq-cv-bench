@@ -14,17 +14,32 @@ def run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
 
 
+def resolve_model_path(user_model_path: Path) -> Path:
+    candidates = [
+        user_model_path,
+        REPO_ROOT / "experiments_cuda/detection/yolov5su.onnx",
+        REPO_ROOT / "experiments_cpu/detection/yolov5su.onnx",
+        REPO_ROOT / "experiments/detection/yolov5su.onnx",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    return user_model_path
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run full H1 detection pipeline: quantize -> compile -> TPU infer -> metrics")
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
 
     parser.add_argument("--model-path", type=Path, default=REPO_ROOT / "experiments/detection/yolov5su.onnx")
+    parser.add_argument("--weights", type=Path, default=REPO_ROOT / "yolov5su.pt")
     parser.add_argument("--calibration-dir", type=Path, default=REPO_ROOT / "data/calibration/MSCOCO2017/val2017")
     parser.add_argument("--img-dir", type=Path, default=REPO_ROOT / "data/evaluation/MSCOCO2017/val2017")
     parser.add_argument("--ann-file", type=Path, default=REPO_ROOT / "data/evaluation/MSCOCO2017/annotations/instances_val2017.json")
 
     parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "experiments/detection")
     parser.add_argument("--experiment-suffix", type=str, default="h1tpu")
+    parser.add_argument("--no-auto-export", action="store_true", help="Do not export ONNX automatically if model is missing")
 
     parser.add_argument("--input-tensor-name", type=str, default=None)
     parser.add_argument("--output-tensor-name", type=str, default=None)
@@ -67,11 +82,32 @@ def main() -> None:
     quantized_pb_path = output_dir / f"yolov5su_{experiment_tag}_quantized.pb"
     run_params_path = output_dir / f"run_params_{experiment_tag}.json"
 
+    model_path = resolve_model_path(args.model_path)
+    if not model_path.exists():
+        if args.no_auto_export:
+            raise FileNotFoundError(
+                f"Model not found: {args.model_path}. Also checked experiments_cuda/experiments_cpu/experiments defaults."
+            )
+        model_path = REPO_ROOT / "experiments/detection/yolov5su.onnx"
+        run(
+            [
+                py,
+                (THIS_DIR / "export_yolov5su_to_onnx.py").as_posix(),
+                "--weights",
+                args.weights.as_posix(),
+                "--output",
+                model_path.as_posix(),
+                "--imgsz",
+                str(args.img_size),
+            ]
+        )
+    print(f"Using ONNX model: {model_path}")
+
     quantize_cmd = [
         py,
         (THIS_DIR / "quantize_yolov5_h1.py").as_posix(),
         "--model-path",
-        args.model_path.as_posix(),
+        model_path.as_posix(),
         "--calibration-dir",
         args.calibration_dir.as_posix(),
         "--output-qm",
@@ -166,6 +202,8 @@ def main() -> None:
         "experiment_tag": experiment_tag,
         "params": {
             "model_path": args.model_path.as_posix(),
+            "resolved_model_path": model_path.as_posix(),
+            "weights": args.weights.as_posix(),
             "calibration_dir": args.calibration_dir.as_posix(),
             "img_dir": args.img_dir.as_posix(),
             "ann_file": args.ann_file.as_posix(),

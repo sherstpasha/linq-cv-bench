@@ -11,7 +11,9 @@
 source /Users/user/tomsk/.venv/bin/activate
 python /Users/user/tomsk/scr/split_datasets_for_calibration.py --force
 python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
-  --python /Users/user/tomsk/.venv/bin/python
+  --python /Users/user/tomsk/.venv/bin/python \
+  --providers CUDAExecutionProvider,CPUExecutionProvider \
+  --batch-size 32
 ```
 
 ## H1 Smoke Test (No Calibration, Classification)
@@ -29,6 +31,9 @@ python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
 Environment info is saved to:
 - `<experiments-dir>/environment.json`
 - `environment` section inside `<experiments-dir>/results_summary.json`
+
+Each run creates a subfolder:
+- `<experiments-dir>/experiment_<provider>_b<batch-size>/...`
 
 Data split output:
 - `data/evaluation` (90%)
@@ -49,9 +54,8 @@ Example:
 ```bash
 python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
   --python /Users/user/tomsk/.venv/bin/python \
-  --classification-providers CPUExecutionProvider \
-  --detection-providers CoreMLExecutionProvider,CPUExecutionProvider \
-  --segmentation-providers CPUExecutionProvider
+  --providers CPUExecutionProvider \
+  --batch-size 16
 ```
 
 ## Quick Test

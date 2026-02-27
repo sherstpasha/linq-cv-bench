@@ -14,6 +14,19 @@ def run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
 
 
+def resolve_model_path(user_model_path: Path) -> Path:
+    candidates = [
+        user_model_path,
+        REPO_ROOT / "experiments_cuda/classification/resnet50.onnx",
+        REPO_ROOT / "experiments_cpu/classification/resnet50.onnx",
+        REPO_ROOT / "experiments/classification/resnet50.onnx",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    return user_model_path
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run full H1 classification pipeline: quantize -> compile -> TPU infer -> metrics")
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
@@ -22,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--calibration-dir", type=Path, default=REPO_ROOT / "data/calibration/imagenet")
     parser.add_argument("--evaluation-dir", type=Path, default=REPO_ROOT / "data/evaluation/imagenet")
     parser.add_argument("--ground-truth", type=Path, default=REPO_ROOT / "data/evaluation/imagenet/val_map.txt")
+    parser.add_argument("--no-auto-export", action="store_true", help="Do not export ONNX automatically if model is missing")
 
     parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "experiments/classification")
     parser.add_argument("--experiment-suffix", type=str, default="h1tpu")
@@ -59,11 +73,30 @@ def main() -> None:
     quantized_pb_path = output_dir / f"resnet50_{suffix}_quantized.pb"
     run_params_path = output_dir / f"run_params_{suffix}.json"
 
+    model_path = resolve_model_path(args.model_path)
+    if not model_path.exists():
+        if args.no_auto_export:
+            raise FileNotFoundError(
+                f"Model not found: {args.model_path}. Also checked experiments_cuda/experiments_cpu/experiments defaults."
+            )
+        model_path = REPO_ROOT / "experiments/classification/resnet50.onnx"
+        run(
+            [
+                py,
+                (THIS_DIR / "export_resnet50_to_onnx.py").as_posix(),
+                "--output",
+                model_path.as_posix(),
+                "--batch-size",
+                str(args.batch_size),
+            ]
+        )
+    print(f"Using ONNX model: {model_path}")
+
     quantize_cmd = [
         py,
         (THIS_DIR / "quantize_resnet50_h1.py").as_posix(),
         "--model-path",
-        args.model_path.as_posix(),
+        model_path.as_posix(),
         "--calibration-dir",
         args.calibration_dir.as_posix(),
         "--output-qm",
@@ -141,6 +174,7 @@ def main() -> None:
         "experiment_suffix": suffix,
         "params": {
             "model_path": args.model_path.as_posix(),
+            "resolved_model_path": model_path.as_posix(),
             "calibration_dir": args.calibration_dir.as_posix(),
             "evaluation_dir": args.evaluation_dir.as_posix(),
             "ground_truth": args.ground_truth.as_posix(),

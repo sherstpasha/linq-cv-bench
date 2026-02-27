@@ -1,6 +1,16 @@
 # Detection (ONNX)
 
 ```bash
+python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
+  --providers CPUExecutionProvider \
+  --batch-size 32
+
+python /Users/user/tomsk/scr/run_all_onnx_experiments.py \
+  --providers CUDAExecutionProvider,CPUExecutionProvider \
+  --batch-size 32
+```
+
+```bash
 python /Users/user/tomsk/scr/detection/export_yolov5su_to_onnx.py
 python /Users/user/tomsk/scr/detection/infer_yolov5_onnx.py --providers CoreMLExecutionProvider,CPUExecutionProvider
 python /Users/user/tomsk/scr/detection/metrics.py
