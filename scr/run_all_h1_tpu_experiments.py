@@ -5,7 +5,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCR = REPO_ROOT / "scr"
@@ -99,7 +99,12 @@ print(json.dumps(out))
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run H1 TPU classification + detection + segmentation and save one JSON")
-    p.add_argument("--python", type=Path, default=None, help="Python interpreter for child scripts (default: current)")
+    p.add_argument(
+        "--python",
+        type=Path,
+        default=None,
+        help="Python interpreter for child scripts (default: venv python if available, else current)",
+    )
     p.add_argument("--experiments-dir", type=Path, default=REPO_ROOT / "experiments", help="Root output directory")
     p.add_argument("--experiment-suffix", type=str, default="h1tpu", help="Suffix used by task runners")
     p.add_argument("--batch-size", type=int, default=8)
@@ -120,12 +125,37 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def resolve_python_interpreter(user_python: Optional[Path] = None) -> str:
+    if user_python is not None:
+        return str(user_python)
+
+    candidates: List[Path] = []
+
+    virtual_env = os.environ.get("VIRTUAL_ENV")
+    if virtual_env:
+        candidates.append(Path(virtual_env) / "bin/python3")
+        candidates.append(Path(virtual_env) / "bin/python")
+
+    candidates.append(REPO_ROOT / "venv/bin/python3")
+    candidates.append(REPO_ROOT / "venv/bin/python")
+    candidates.append(REPO_ROOT / ".venv/bin/python3")
+    candidates.append(REPO_ROOT / ".venv/bin/python")
+
+    candidates.append(Path(sys.executable))
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.as_posix()
+
+    return sys.executable
+
+
 def main() -> None:
     args = parse_args()
     if args.batch_size <= 0:
         raise RuntimeError("--batch-size must be > 0")
 
-    py = str(args.python) if args.python else sys.executable
+    py = resolve_python_interpreter(args.python)
     os.environ["YOLO_AUTOINSTALL"] = "False"
 
     provider_tag = "h1tpu"
