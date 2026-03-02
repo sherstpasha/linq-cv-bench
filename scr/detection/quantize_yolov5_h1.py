@@ -190,7 +190,7 @@ def main() -> None:
 
     converted_graph, mapping = load_converted_graph(onnx_model)
     graph_def = to_graph_def(converted_graph)
-    _, _, leaf_tensors = graph_diagnostics(graph_def)
+    graph_diagnostics(graph_def)
 
     mapped_input = map_tensor_name(onnx_input_name, mapping)
     mapped_output = map_tensor_name(onnx_output_name, mapping)
@@ -216,7 +216,6 @@ def main() -> None:
                 onnx_output_name,
                 f"{onnx_output_name}:0",
             ]
-            + leaf_tensors[:8]
         )
 
         regular_model = None
@@ -266,7 +265,7 @@ def main() -> None:
     finally:
         try:
             memmap_path.unlink(missing_ok=True)
-            print(f"Removed temporary calibration tensor: {memmap_path}")
+            print(f"Removed calibration tensor: {memmap_path}")
         except Exception:
             pass
 

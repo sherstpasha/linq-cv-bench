@@ -23,8 +23,6 @@ class RetinaNetExportWrapper(nn.Module):
         return torch.cat([det, pad], dim=0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # ONNX export path for torchvision detection is far more stable with batch=1.
-        # We export [1, max_det, 6] tensor: [x1, y1, x2, y2, score, coco_label_id].
         img = x[0]
         out = self.model([img])[0]
         boxes = out["boxes"]
@@ -57,7 +55,7 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
     if args.batch_size != 1:
-        print(f"Requested export batch-size={args.batch_size}, forcing batch-size=1 for stable RetinaNet ONNX export.")
+        print(f"Requested export batch-size={args.batch_size}, using batch-size=1.")
     export_batch_size = 1
 
     weights = None if args.no_pretrained else RetinaNet_ResNet50_FPN_Weights.COCO_V1

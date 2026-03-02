@@ -218,13 +218,11 @@ def logits_to_mask(sample_logits: np.ndarray, num_classes: int) -> np.ndarray:
     if sample_logits.ndim != 3:
         raise RuntimeError(f"Unexpected per-sample logits shape: {sample_logits.shape}")
 
-    # Prefer exact class-channel match for robust NCHW/NHWC handling.
     if sample_logits.shape[0] == num_classes:
         class_axis = 0
     elif sample_logits.shape[-1] == num_classes:
         class_axis = 2
     else:
-        # Fallback: classes are usually the smallest dimension.
         class_axis = int(np.argmin(sample_logits.shape))
     return np.argmax(sample_logits, axis=class_axis).astype(np.uint8)
 

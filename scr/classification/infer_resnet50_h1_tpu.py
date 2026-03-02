@@ -100,7 +100,6 @@ def pick_output(output_dict: Dict[str, np.ndarray], preferred_name: Optional[str
             return output_dict[k]
     if len(output_dict) == 1:
         return next(iter(output_dict.values()))
-    # fallback: prefer tensor-like outputs
     for k, v in output_dict.items():
         if isinstance(v, np.ndarray) and v.ndim >= 2:
             return v
@@ -157,9 +156,7 @@ def _collect_runtime_input_hints(inference: object, tpu_program: object) -> List
             except Exception:
                 continue
             hints.extend(_as_name_list(value))
-    # Common names from vendor examples.
     hints.extend(["input.1", "input", "input:0", "images", "Placeholder", "Placeholder:0"])
-    # Keep unique order.
     uniq: List[str] = []
     seen = set()
     for x in hints:
@@ -233,10 +230,8 @@ def main() -> None:
     with tpu.Device.open(device_id) as tpu_device:
         with tpu_device.load(args.program_path.as_posix()) as tpu_program:
             with tpu_program.inference() as inference:
-                # Resolve runtime input/output names with first sample.
                 with Image.open(samples[0].path) as image:
                     probe_x_single = preprocess_resnet50(image)
-                # Compiled TPU program may require static batch size.
                 probe_x = make_batch([probe_x_single], args.batch_size)
                 runtime_hints = _collect_runtime_input_hints(inference, tpu_program)
                 print(f"Runtime input hints: {runtime_hints}")

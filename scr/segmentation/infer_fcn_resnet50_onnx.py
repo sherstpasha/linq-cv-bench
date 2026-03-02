@@ -72,8 +72,6 @@ def main() -> None:
     args.timing_out.parent.mkdir(parents=True, exist_ok=True)
 
     ids = load_ids(split_file, args.limit)
-    # Torch import preloads CUDA shared libs in many environments where ORT
-    # cannot resolve them from system paths directly.
     try:
         import torch  # type: ignore
         _ = torch.cuda.is_available()

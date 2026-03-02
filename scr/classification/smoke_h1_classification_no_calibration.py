@@ -201,7 +201,6 @@ def main() -> None:
     graph_def = _as_graph_def(converted, tf)
 
     # First pass to discover actual input tensor shape in converted graph.
-    # Build a temporary graph just for shape resolution.
     import tensorflow as tf
     temp_graph = tf.Graph()
     with temp_graph.as_default():

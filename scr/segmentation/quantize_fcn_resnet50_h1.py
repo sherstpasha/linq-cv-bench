@@ -113,7 +113,6 @@ def load_converted_graph(onnx_model: Any) -> Tuple[Any, Dict[str, str]]:
     except Exception:
         from onnx_direct import onnx_to_tf  # type: ignore
 
-    # Different framework versions support different signatures/behaviors.
     converted = None
     errors: List[str] = []
     for kwargs in (
@@ -235,7 +234,6 @@ def main() -> None:
     onnx_input_name = args.input_tensor_name or onnx_input_default
     onnx_output_name = args.output_tensor_name or onnx_output_default
 
-    # tpu_framework/onnx_direct conversion path used in H1 expects static shapes.
     force_static_onnx_input_shape(
         onnx_model=onnx_model,
         input_name=onnx_input_name,
@@ -318,7 +316,7 @@ def main() -> None:
     finally:
         try:
             memmap_path.unlink(missing_ok=True)
-            print(f"Removed temporary calibration tensor: {memmap_path}")
+            print(f"Removed calibration tensor: {memmap_path}")
         except Exception:
             pass
 

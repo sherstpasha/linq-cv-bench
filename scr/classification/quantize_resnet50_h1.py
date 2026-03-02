@@ -286,7 +286,7 @@ def main() -> None:
     finally:
         try:
             memmap_path.unlink(missing_ok=True)
-            print(f"Removed temporary calibration tensor: {memmap_path}")
+            print(f"Removed calibration tensor: {memmap_path}")
         except Exception:
             pass
 
