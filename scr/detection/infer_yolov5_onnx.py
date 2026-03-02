@@ -80,6 +80,7 @@ def main() -> None:
     providers = resolve_providers(args.providers)
     session = ort.InferenceSession(args.model_path.as_posix(), providers=list(providers))
     active_providers = session.get_providers()
+    initial_providers = list(active_providers)
     print(f"Active providers: {active_providers}")
     input_meta = session.get_inputs()[0]
     input_name = input_meta.name
@@ -96,6 +97,7 @@ def main() -> None:
     results: List[Dict] = []
     infer_time = 0.0
     measured_images = 0
+    cpu_fallback_used = False
 
     num_batches = (len(img_ids) + effective_batch_size - 1) // effective_batch_size
     processed_images = 0
@@ -130,9 +132,30 @@ def main() -> None:
 
         x_batch = np.stack(batch_tensors, axis=0).astype(np.float32)
 
-        t0 = time.perf_counter()
-        pred = normalize_prediction_shape(session.run(None, {input_name: x_batch})[0])
-        t1 = time.perf_counter()
+        run_ok = False
+        while not run_ok:
+            t0 = time.perf_counter()
+            try:
+                pred_raw = session.run(None, {input_name: x_batch})[0]
+                t1 = time.perf_counter()
+                pred = normalize_prediction_shape(pred_raw)
+                run_ok = True
+            except Exception as e:
+                if not cpu_fallback_used and "CoreMLExecutionProvider" in active_providers:
+                    print(
+                        "CoreMLExecutionProvider failed during detection inference. "
+                        "Retrying with CPUExecutionProvider."
+                    )
+                    session = ort.InferenceSession(
+                        args.model_path.as_posix(),
+                        providers=["CPUExecutionProvider"],
+                    )
+                    active_providers = session.get_providers()
+                    input_meta = session.get_inputs()[0]
+                    input_name = input_meta.name
+                    cpu_fallback_used = True
+                    continue
+                raise e
 
         dets = non_max_suppression(torch.from_numpy(pred), conf_thres=args.conf_thres, iou_thres=args.iou_thres, max_det=args.max_det)
         for det_idx, det in enumerate(dets):
@@ -172,6 +195,8 @@ def main() -> None:
 
     timing = {
         "providers": list(active_providers),
+        "providers_initial": initial_providers,
+        "cpu_fallback_used": cpu_fallback_used,
         "batch_size": effective_batch_size,
         "requested_batch_size": args.batch_size,
         "images": len(img_ids),
