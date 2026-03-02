@@ -3,12 +3,13 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import List
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 THIS_DIR = Path(__file__).resolve().parent
 
 
-def run(cmd: list[str]) -> None:
+def run(cmd: List[str]) -> None:
     print("$", " ".join(cmd))
     subprocess.run(cmd, check=True)
 

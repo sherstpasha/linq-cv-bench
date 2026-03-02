@@ -5,13 +5,13 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCR = REPO_ROOT / "scr"
 
 
-def run(cmd: list[str]) -> None:
+def run(cmd: List[str]) -> None:
     print("$", " ".join(str(x) for x in cmd))
     env = os.environ.copy()
     env["YOLO_AUTOINSTALL"] = "False"
