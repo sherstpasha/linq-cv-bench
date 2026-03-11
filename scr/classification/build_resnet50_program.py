@@ -52,6 +52,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--input-tensor-name", type=str, default=None)
     parser.add_argument("--output-tensor-name", type=str, default=None)
+    parser.add_argument(
+        "--input-layout",
+        type=str,
+        default="auto",
+        choices=["auto", "nchw", "nhwc"],
+        help="Input tensor layout for calibration and compile; auto uses converted TF graph shape",
+    )
     parser.add_argument("--num-calibration-images", type=int, default=0)
     parser.add_argument("--calibration-chunk-size", type=int, default=256)
     parser.add_argument("--percentile", type=float, default=100.0)
@@ -75,7 +82,7 @@ def list_images(root: Path) -> List[Path]:
     return images
 
 
-def preprocess_resnet50(image: Image.Image) -> np.ndarray:
+def preprocess_resnet50(image: Image.Image, input_layout: str) -> np.ndarray:
     image = image.convert("RGB")
     width, height = image.size
     scale = 256.0 / min(width, height)
@@ -88,7 +95,10 @@ def preprocess_resnet50(image: Image.Image) -> np.ndarray:
 
     arr = np.asarray(image, dtype=np.float32) / 255.0
     arr = (arr - IMAGENET_MEAN) / IMAGENET_STD
-    arr = np.transpose(arr, (2, 0, 1))
+    if input_layout == "nchw":
+        arr = np.transpose(arr, (2, 0, 1))
+    elif input_layout != "nhwc":
+        raise RuntimeError(f"Unsupported input layout: {input_layout}")
     return arr.astype(np.float32)
 
 
@@ -97,6 +107,9 @@ def build_calibration_tensor_memmap(
     num_images: int,
     chunk_size: int,
     tmp_dir: Path,
+    input_layout: str,
+    input_height: int,
+    input_width: int,
 ) -> Tuple[np.memmap, Path, int]:
     images = list_images(calibration_dir)
     if not images:
@@ -120,7 +133,9 @@ def build_calibration_tensor_memmap(
         memmap_path.as_posix(),
         dtype=np.float32,
         mode="w+",
-        shape=(sample_count, 3, 224, 224),
+        shape=(sample_count, 3, input_height, input_width)
+        if input_layout == "nchw"
+        else (sample_count, input_height, input_width, 3),
     )
 
     total_chunks = math.ceil(sample_count / chunk_size)
@@ -130,7 +145,7 @@ def build_calibration_tensor_memmap(
         tensors: List[np.ndarray] = []
         for image_path in images[start:end]:
             with Image.open(image_path) as image:
-                tensors.append(preprocess_resnet50(image))
+                tensors.append(preprocess_resnet50(image, input_layout=input_layout))
         calibration_batch[start:end] = np.stack(tensors, axis=0).astype(np.float32)
         calibration_batch.flush()
 
@@ -162,6 +177,47 @@ def to_graph_def(graph_like: Any) -> Any:
     if isinstance(graph_like, tf.compat.v1.GraphDef):
         return graph_like
     raise TypeError(f"Unsupported graph type: {type(graph_like)}")
+
+
+def infer_input_shape(graph_like: Any, tensor_name: str) -> Optional[Tuple[int, int, int, int]]:
+    import tensorflow as tf  # type: ignore
+
+    if isinstance(graph_like, tf.Graph):
+        try:
+            tensor = graph_like.get_tensor_by_name(tensor_name)
+        except KeyError:
+            return None
+        shape = tensor.shape.as_list()
+        if len(shape) != 4:
+            return None
+        resolved = [1 if dim is None else int(dim) for dim in shape]
+        return tuple(resolved)  # type: ignore[return-value]
+    return None
+
+
+def resolve_input_layout(
+    requested_layout: str,
+    inferred_shape: Optional[Tuple[int, int, int, int]],
+) -> Tuple[str, Tuple[int, int, int, int]]:
+    if inferred_shape is None:
+        if requested_layout == "auto":
+            return "nchw", (1, 3, 224, 224)
+        if requested_layout == "nchw":
+            return "nchw", (1, 3, 224, 224)
+        return "nhwc", (1, 224, 224, 3)
+
+    if requested_layout == "auto":
+        if inferred_shape[1] == 3:
+            return "nchw", inferred_shape
+        if inferred_shape[3] == 3:
+            return "nhwc", inferred_shape
+        raise RuntimeError(f"Could not infer input layout from shape {inferred_shape}")
+
+    if requested_layout == "nchw" and inferred_shape[1] != 3:
+        raise RuntimeError(f"Requested NCHW, but converted graph shape is {inferred_shape}")
+    if requested_layout == "nhwc" and inferred_shape[3] != 3:
+        raise RuntimeError(f"Requested NHWC, but converted graph shape is {inferred_shape}")
+    return requested_layout, inferred_shape
 
 
 def map_tensor_name(name: str, mapping: Dict[str, str]) -> str:
@@ -238,6 +294,12 @@ def main() -> None:
 
     mapped_input_name = map_tensor_name(onnx_input_name, mapping)
     mapped_output_name = map_tensor_name(onnx_output_name, mapping)
+    inferred_input_shape = infer_input_shape(converted_graph, mapped_input_name)
+    input_layout, input_shape = resolve_input_layout(args.input_layout, inferred_input_shape)
+    if input_layout == "nchw":
+        _, _, input_height, input_width = input_shape
+    else:
+        _, input_height, input_width, _ = input_shape
     output_candidates = unique(
         [
             mapped_output_name,
@@ -252,6 +314,9 @@ def main() -> None:
         num_images=args.num_calibration_images,
         chunk_size=args.calibration_chunk_size,
         tmp_dir=args.artifacts_dir,
+        input_layout=input_layout,
+        input_height=input_height,
+        input_width=input_width,
     )
 
     try:
@@ -262,7 +327,7 @@ def main() -> None:
         for output_candidate in output_candidates:
             model_kwargs = {
                 "original_graph_def": graph_def,
-                "input_shapes": {mapped_input_name: (1, 3, 224, 224)},
+                "input_shapes": {mapped_input_name: input_shape},
                 "output_nodes": [output_candidate],
             }
             if mapping:
@@ -323,6 +388,8 @@ def main() -> None:
             "onnx_input_name": onnx_input_name,
             "onnx_output_name": onnx_output_name,
             "mapped_input_name": mapped_input_name,
+            "input_layout": input_layout,
+            "input_shape": list(input_shape),
             "selected_output_node": selected_output,
             "qm_path": qm_path.as_posix(),
             "compiled_programs": compiled_programs,
