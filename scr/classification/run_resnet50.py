@@ -54,18 +54,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reexport-model", action="store_true")
     parser.add_argument("--export-opset", type=int, default=13)
     parser.add_argument("--no-pretrained", action="store_true")
-    parser.add_argument(
-        "--export-input-layout",
-        type=str,
-        default="nhwc",
-        choices=["nchw", "nhwc"],
-    )
-    parser.add_argument(
-        "--export-input-value-range",
-        type=str,
-        default="uint8",
-        choices=["normalized", "unit_float", "uint8"],
-    )
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-accuracy", action="store_true")
     parser.add_argument("--skip-performance", action="store_true")
@@ -91,10 +79,10 @@ def load_model_export_metadata(model_path: Path) -> Dict:
     return json.loads(metadata_path.read_text(encoding="utf-8"))
 
 
-def export_contract_matches(metadata: Dict, input_layout: str, input_value_range: str) -> bool:
+def export_contract_matches(metadata: Dict) -> bool:
     return (
-        metadata.get("input_layout") == input_layout
-        and metadata.get("input_value_range") == input_value_range
+        metadata.get("input_layout") == "nhwc"
+        and metadata.get("input_value_range") == "uint8"
     )
 
 
@@ -113,11 +101,7 @@ def main() -> None:
 
     needs_export = args.reexport_model or not args.model_path.exists()
     if args.model_path.exists() and model_export_metadata:
-        if not export_contract_matches(
-            metadata=model_export_metadata,
-            input_layout=args.export_input_layout,
-            input_value_range=args.export_input_value_range,
-        ):
+        if not export_contract_matches(metadata=model_export_metadata):
             if args.reexport_model:
                 needs_export = True
             else:
@@ -125,17 +109,11 @@ def main() -> None:
                     "Existing ONNX export uses a different input contract. "
                     f"Current file: layout={model_export_metadata.get('input_layout')}, "
                     f"value_range={model_export_metadata.get('input_value_range')}. "
-                    f"Requested: layout={args.export_input_layout}, "
-                    f"value_range={args.export_input_value_range}. "
+                    "Expected: layout=nhwc, value_range=uint8. "
                     "Use --reexport-model or choose another --model-path."
                 )
 
     if needs_export:
-        if not args.model_path.exists() and not args.export_model_if_missing and not args.reexport_model:
-            raise FileNotFoundError(
-                f"Model not found: {args.model_path}. "
-                "Pass --export-model-if-missing to export torchvision ResNet-50 automatically."
-            )
         export_cmd = [
             py,
             (THIS_DIR / "export_resnet50_to_onnx.py").as_posix(),
@@ -143,10 +121,6 @@ def main() -> None:
             args.model_path.as_posix(),
             "--opset",
             str(args.export_opset),
-            "--input-layout",
-            args.export_input_layout,
-            "--input-value-range",
-            args.export_input_value_range,
         ]
         if args.no_pretrained:
             export_cmd.append("--no-pretrained")

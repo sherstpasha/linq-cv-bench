@@ -22,15 +22,13 @@
 ## Быстрый запуск
 
 ```bash
-python /Users/user/tomsk/scr/classification/run_resnet50.py \
-  --export-model-if-missing
+python /Users/user/tomsk/scr/classification/run_resnet50.py
 ```
 
-Быстрая отладка на первых `100` изображениях:
+Проверка на первых `100` изображениях:
 
 ```bash
 python /Users/user/tomsk/scr/classification/run_resnet50.py \
-  --export-model-if-missing \
   --accuracy-samples 100 \
   --skip-performance
 ```
@@ -43,15 +41,7 @@ python /Users/user/tomsk/scr/classification/run_resnet50.py \
 python /Users/user/tomsk/scr/classification/export_resnet50_to_onnx.py
 ```
 
-Экспорт по умолчанию теперь уже соответствует найденному рабочему контракту `NHWC + uint8`.
-
-Явный экспорт:
-
-```bash
-python /Users/user/tomsk/scr/classification/export_resnet50_to_onnx.py \
-  --input-layout nhwc \
-  --input-value-range uint8
-```
+Экспорт по умолчанию уже делает рабочий контракт `NHWC + uint8 + internal normalization`.
 
 Сборка артефактов:
 
@@ -79,14 +69,14 @@ python /Users/user/tomsk/scr/classification/run_resnet50_performance.py \
 
 ## Замечания
 
-- Если `models/classification/resnet50.onnx` отсутствует, orchestrator может экспортировать его из `torchvision`.
+- Если `models/classification/resnet50.onnx` отсутствует, orchestrator сам экспортирует его из `torchvision`.
 - По умолчанию экспорт идет с `opset 13`, потому что он безопаснее для vendor-конвертера, чем более новые версии.
 - При первом экспорте pretrained-весов `torchvision` нужен доступ в интернет.
 - По умолчанию экспортируется модель с рабочим контрактом `NHWC + uint8 + internal normalization`.
 - Если рядом с `ONNX` лежит metadata JSON от старого экспорта, используй `--reexport-model` или другой `--model-path`.
 - Для обычного `resnet50` используется свой evaluator `evaluate_resnet50_accuracy.py`, а не vendor `accuracy-imagenet.py`.
 - `accuracy` по умолчанию использует первые `5000` строк из `data/evaluation/imagenet/val_map.txt`.
-- Для отладки можно уменьшить выборку, например `--accuracy-samples 100` или `run_resnet50_accuracy.py --samples 100`.
+- Для быстрой проверки можно уменьшить выборку, например `--accuracy-samples 100` или `run_resnet50_accuracy.py --samples 100`.
 - `performance` следует ПМИ: запускается через `mlperf` и использует значения `qps` по умолчанию:
   - `500` для `batch 1`
   - `1000` для `batch 8`

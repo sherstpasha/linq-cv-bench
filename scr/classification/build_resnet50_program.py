@@ -52,20 +52,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--input-tensor-name", type=str, default=None)
     parser.add_argument("--output-tensor-name", type=str, default=None)
-    parser.add_argument(
-        "--input-layout",
-        type=str,
-        default="auto",
-        choices=["auto", "nchw", "nhwc"],
-        help="Input tensor layout for calibration and compile; auto uses converted TF graph shape",
-    )
-    parser.add_argument(
-        "--input-value-range",
-        type=str,
-        default="auto",
-        choices=["auto", "normalized", "unit_float", "uint8"],
-        help="Calibration value range; auto uses export metadata next to the ONNX model if available",
-    )
     parser.add_argument("--num-calibration-images", type=int, default=0)
     parser.add_argument("--calibration-chunk-size", type=int, default=256)
     parser.add_argument("--percentile", type=float, default=100.0)
@@ -222,34 +208,17 @@ def infer_input_shape(graph_like: Any, tensor_name: str) -> Optional[Tuple[int, 
     return None
 
 
-def resolve_input_layout(
-    requested_layout: str,
-    inferred_shape: Optional[Tuple[int, int, int, int]],
-) -> Tuple[str, Tuple[int, int, int, int]]:
+def resolve_input_layout(inferred_shape: Optional[Tuple[int, int, int, int]]) -> Tuple[str, Tuple[int, int, int, int]]:
     if inferred_shape is None:
-        if requested_layout == "auto":
-            return "nchw", (1, 3, 224, 224)
-        if requested_layout == "nchw":
-            return "nchw", (1, 3, 224, 224)
-        return "nhwc", (1, 224, 224, 3)
-
-    if requested_layout == "auto":
-        if inferred_shape[1] == 3:
-            return "nchw", inferred_shape
-        if inferred_shape[3] == 3:
-            return "nhwc", inferred_shape
-        raise RuntimeError(f"Could not infer input layout from shape {inferred_shape}")
-
-    if requested_layout == "nchw" and inferred_shape[1] != 3:
-        raise RuntimeError(f"Requested NCHW, but converted graph shape is {inferred_shape}")
-    if requested_layout == "nhwc" and inferred_shape[3] != 3:
-        raise RuntimeError(f"Requested NHWC, but converted graph shape is {inferred_shape}")
-    return requested_layout, inferred_shape
+        return "nchw", (1, 3, 224, 224)
+    if inferred_shape[1] == 3:
+        return "nchw", inferred_shape
+    if inferred_shape[3] == 3:
+        return "nhwc", inferred_shape
+    raise RuntimeError(f"Could not infer input layout from shape {inferred_shape}")
 
 
-def resolve_input_value_range(requested: str, export_metadata: Dict[str, Any]) -> str:
-    if requested != "auto":
-        return requested
+def resolve_input_value_range(export_metadata: Dict[str, Any]) -> str:
     if export_metadata.get("input_value_range") in {"normalized", "unit_float", "uint8"}:
         return str(export_metadata["input_value_range"])
     return "normalized"
@@ -331,8 +300,8 @@ def main() -> None:
     mapped_input_name = map_tensor_name(onnx_input_name, mapping)
     mapped_output_name = map_tensor_name(onnx_output_name, mapping)
     inferred_input_shape = infer_input_shape(converted_graph, mapped_input_name)
-    input_layout, input_shape = resolve_input_layout(args.input_layout, inferred_input_shape)
-    input_value_range = resolve_input_value_range(args.input_value_range, export_metadata)
+    input_layout, input_shape = resolve_input_layout(inferred_input_shape)
+    input_value_range = resolve_input_value_range(export_metadata)
     if input_layout == "nchw":
         _, _, input_height, input_width = input_shape
     else:
