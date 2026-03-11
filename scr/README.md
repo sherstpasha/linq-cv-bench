@@ -6,6 +6,7 @@
   - `download_data_from_yandex_disk.py`
   - `split_datasets_for_calibration.py`
 - классификация на `INT8/TPU`:
+  - `classification/export_resnet50_to_onnx.py`
   - `classification/build_resnet50_program.py`
   - `classification/run_resnet50_accuracy.py`
   - `classification/run_resnet50_performance.py`

@@ -17,12 +17,12 @@ IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build quantized and compiled IVA H1 artifacts for resnet50_mlperf"
+        description="Build quantized and compiled IVA H1 artifacts for ResNet-50"
     )
     parser.add_argument(
         "--model-path",
         type=Path,
-        default=REPO_ROOT / "resnet50_mlperf.onnx",
+        default=REPO_ROOT / "models/classification/resnet50.onnx",
         help="Path to source ONNX model",
     )
     parser.add_argument(
@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model-name",
         type=str,
-        default="resnet50_mlperf",
+        default="resnet50",
         help="Artifact name prefix",
     )
     parser.add_argument(

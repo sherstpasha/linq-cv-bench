@@ -1,12 +1,13 @@
 # classification
 
-Классификационный сценарий построен вокруг `resnet50_mlperf` и `INT8/TPU`.
+Классификационный сценарий построен вокруг своего `ResNet-50` и `INT8/TPU`.
 
 Используемые пути:
 
 - `data/evaluation/imagenet` - данные для `accuracy`
 - `data/calibration/imagenet` - данные для калибровки
 - `models/classification/resnet50.onnx` - исходная ONNX-модель
+- `models/classification/resnet50.json` - метаданные экспорта из `torchvision`
 - `artifacts/classification` - `.qm`, `.tpu`, build metadata
 - `experiments/classification` - логи запусков и итоговые JSON
 
@@ -16,15 +17,32 @@
 - `scr/classification/accuracy-imagenet.py`
 - `tpu_framework`
 - `tpu_compiler`
+- `torch`
+- `torchvision`
 
 ## Быстрый запуск
 
 ```bash
 python /Users/user/tomsk/scr/classification/run_resnet50.py \
-  --model-path /Users/user/tomsk/models/classification/resnet50.onnx
+  --export-model-if-missing
+```
+
+Быстрая отладка на первых `100` изображениях:
+
+```bash
+python /Users/user/tomsk/scr/classification/run_resnet50.py \
+  --export-model-if-missing \
+  --accuracy-samples 100 \
+  --skip-performance
 ```
 
 ## Ручной порядок
+
+Экспортировать ONNX из `torchvision`:
+
+```bash
+python /Users/user/tomsk/scr/classification/export_resnet50_to_onnx.py
+```
 
 Сборка артефактов:
 
@@ -37,7 +55,7 @@ Accuracy:
 
 ```bash
 python /Users/user/tomsk/scr/classification/run_resnet50_accuracy.py \
-  --program-path /Users/user/tomsk/artifacts/classification/resnet50_mlperf_b1.tpu
+  --program-path /Users/user/tomsk/artifacts/classification/resnet50_b1.tpu
 ```
 
 Performance:
@@ -52,8 +70,11 @@ python /Users/user/tomsk/scr/classification/run_resnet50_performance.py \
 
 ## Замечания
 
-- ONNX-модель считается вашей входной моделью и должна быть подготовлена отдельно.
-- `accuracy` использует весь `data/evaluation/imagenet`, если явно не задан `--samples`.
+- Если `models/classification/resnet50.onnx` отсутствует, orchestrator может экспортировать его из `torchvision`.
+- По умолчанию экспорт идет с `opset 13`, потому что он безопаснее для vendor-конвертера, чем более новые версии.
+- При первом экспорте pretrained-весов `torchvision` нужен доступ в интернет.
+- `accuracy` по умолчанию использует первые `5000` строк из `data/evaluation/imagenet/val_map.txt`.
+- Для отладки можно уменьшить выборку, например `--accuracy-samples 100` или `run_resnet50_accuracy.py --samples 100`.
 - `performance` следует ПМИ: запускается через `mlperf` и использует значения `qps` по умолчанию:
   - `500` для `batch 1`
   - `1000` для `batch 8`

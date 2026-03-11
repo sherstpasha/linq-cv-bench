@@ -13,7 +13,7 @@ SAMPLES_RE = re.compile(r"Samples per second\s*:\s*([0-9.]+)")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run MLPerf performance for resnet50_mlperf on IVA H1"
+        description="Run MLPerf performance for ResNet-50 on IVA H1"
     )
     parser.add_argument("--mlperf-binary", type=str, default="mlperf")
     parser.add_argument(
@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "artifacts/classification",
     )
-    parser.add_argument("--model-name", type=str, default="resnet50_mlperf")
+    parser.add_argument("--model-name", type=str, default="resnet50")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument(
         "--qps",

@@ -2,3 +2,5 @@ numpy
 onnx
 Pillow
 tensorflow
+torch
+torchvision

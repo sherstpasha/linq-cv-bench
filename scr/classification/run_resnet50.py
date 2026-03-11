@@ -12,7 +12,7 @@ THIS_DIR = Path(__file__).resolve().parent
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the end-to-end INT8/TPU classification workflow for resnet50_mlperf"
+        description="Run the end-to-end INT8/TPU classification workflow for ResNet-50"
     )
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
     parser.add_argument(
@@ -46,10 +46,13 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "experiments/classification",
     )
-    parser.add_argument("--model-name", type=str, default="resnet50_mlperf")
-    parser.add_argument("--accuracy-samples", type=int, default=0)
+    parser.add_argument("--model-name", type=str, default="resnet50")
+    parser.add_argument("--accuracy-samples", type=int, default=5000)
     parser.add_argument("--performance-runs", type=int, default=3)
     parser.add_argument("--compile-preset", type=str, default="O1", choices=["O1", "O5", "DEFAULT"])
+    parser.add_argument("--export-model-if-missing", action="store_true")
+    parser.add_argument("--export-opset", type=int, default=13)
+    parser.add_argument("--no-pretrained", action="store_true")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-accuracy", action="store_true")
     parser.add_argument("--skip-performance", action="store_true")
@@ -78,9 +81,25 @@ def main() -> None:
     accuracy_dir = args.experiments_dir / "accuracy"
     performance_dir = args.experiments_dir / "performance"
     output_json = args.output_json or (args.experiments_dir / "results_summary.json")
+    export_cmd = None
 
     if not args.model_path.exists():
-        raise FileNotFoundError(f"Model not found: {args.model_path}")
+        if not args.export_model_if_missing:
+            raise FileNotFoundError(
+                f"Model not found: {args.model_path}. "
+                "Pass --export-model-if-missing to export torchvision ResNet-50 automatically."
+            )
+        export_cmd = [
+            py,
+            (THIS_DIR / "export_resnet50_to_onnx.py").as_posix(),
+            "--output",
+            args.model_path.as_posix(),
+            "--opset",
+            str(args.export_opset),
+        ]
+        if args.no_pretrained:
+            export_cmd.append("--no-pretrained")
+        run(export_cmd)
 
     if not args.skip_build:
         build_cmd = [
@@ -156,6 +175,10 @@ def main() -> None:
         "accuracy_script": args.accuracy_script.as_posix(),
         "artifacts_dir": args.artifacts_dir.as_posix(),
         "experiments_dir": args.experiments_dir.as_posix(),
+        "model_export": {
+            "command": export_cmd,
+            "executed": export_cmd is not None,
+        },
         "build": {
             "command": build_cmd,
             "summary": load_json(build_summary_path) if not args.skip_build else {"skipped": True},

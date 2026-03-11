@@ -13,7 +13,7 @@ ACCURACY_RE = re.compile(r"accuracy=([0-9.]+)%\s*,\s*good=(\d+)\s*,\s*total=(\d+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run MLPerf accuracy for resnet50_mlperf on IVA H1"
+        description="Run MLPerf accuracy for ResNet-50 on IVA H1"
     )
     parser.add_argument("--mlperf-binary", type=str, default="mlperf")
     parser.add_argument(
@@ -25,7 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--program-path",
         type=Path,
-        default=REPO_ROOT / "artifacts/classification/resnet50_mlperf_b1.tpu",
+        default=REPO_ROOT / "artifacts/classification/resnet50_b1.tpu",
         help="Path to batch-1 TPU program",
     )
     parser.add_argument(
@@ -45,8 +45,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--samples",
         type=int,
-        default=0,
-        help="Number of evaluation samples to use; 0 means all rows from val_map.txt",
+        default=5000,
+        help="Number of evaluation samples to use from the start of val_map.txt; 0 means all rows",
     )
     parser.add_argument("--dtype", type=str, default="int32")
     return parser.parse_args()
