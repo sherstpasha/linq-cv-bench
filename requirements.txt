@@ -1,11 +1,4 @@
 numpy
 onnx
-onnxruntime-gpu
-tensorflow
-torch
-torchvision
-ultralytics
-pycocotools
-opencv-python
 Pillow
-tqdm
+tensorflow
