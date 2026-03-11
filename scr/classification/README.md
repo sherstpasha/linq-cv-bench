@@ -42,6 +42,7 @@ python /Users/user/tomsk/scr/classification/export_resnet50_to_onnx.py
 ```
 
 Экспорт по умолчанию уже делает рабочий контракт `NHWC + uint8 + internal normalization`.
+Калибровка для `INT8` фиксирована и всегда использует стандартный `ImageNet normalized` preprocess.
 
 Сборка артефактов:
 
@@ -73,6 +74,7 @@ python /Users/user/tomsk/scr/classification/run_resnet50_performance.py \
 - По умолчанию экспорт идет с `opset 13`, потому что он безопаснее для vendor-конвертера, чем более новые версии.
 - При первом экспорте pretrained-весов `torchvision` нужен доступ в интернет.
 - По умолчанию экспортируется модель с рабочим контрактом `NHWC + uint8 + internal normalization`.
+- Калибровка в build-контуре фиксирована: resize -> center crop -> `ImageNet mean/std` normalization.
 - Если рядом с `ONNX` лежит metadata JSON от старого экспорта, используй `--reexport-model` или другой `--model-path`.
 - Для обычного `resnet50` используется свой evaluator `evaluate_resnet50_accuracy.py`, а не vendor `accuracy-imagenet.py`.
 - `accuracy` по умолчанию использует первые `5000` строк из `data/evaluation/imagenet/val_map.txt`.

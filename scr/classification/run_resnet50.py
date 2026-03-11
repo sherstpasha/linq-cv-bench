@@ -50,7 +50,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--accuracy-samples", type=int, default=5000)
     parser.add_argument("--performance-runs", type=int, default=3)
     parser.add_argument("--compile-preset", type=str, default="O1", choices=["O1", "O5", "DEFAULT"])
-    parser.add_argument("--export-model-if-missing", action="store_true")
     parser.add_argument("--reexport-model", action="store_true")
     parser.add_argument("--export-opset", type=int, default=13)
     parser.add_argument("--no-pretrained", action="store_true")

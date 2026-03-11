@@ -82,7 +82,7 @@ def load_model_export_metadata(model_path: Path) -> Dict[str, Any]:
     return json.loads(metadata_path.read_text(encoding="utf-8"))
 
 
-def preprocess_resnet50(image: Image.Image, input_layout: str, input_value_range: str) -> np.ndarray:
+def preprocess_resnet50_for_calibration(image: Image.Image, input_layout: str) -> np.ndarray:
     image = image.convert("RGB")
     width, height = image.size
     scale = 256.0 / min(width, height)
@@ -93,14 +93,8 @@ def preprocess_resnet50(image: Image.Image, input_layout: str, input_value_range
     top = (new_h - 224) // 2
     image = image.crop((left, top, left + 224, top + 224))
 
-    arr = np.asarray(image, dtype=np.float32)
-    if input_value_range == "normalized":
-        arr = arr / 255.0
-        arr = (arr - IMAGENET_MEAN) / IMAGENET_STD
-    elif input_value_range == "unit_float":
-        arr = arr / 255.0
-    elif input_value_range != "uint8":
-        raise RuntimeError(f"Unsupported input value range: {input_value_range}")
+    arr = np.asarray(image, dtype=np.float32) / 255.0
+    arr = (arr - IMAGENET_MEAN) / IMAGENET_STD
     if input_layout == "nchw":
         arr = np.transpose(arr, (2, 0, 1))
     elif input_layout != "nhwc":
@@ -114,7 +108,6 @@ def build_calibration_tensor_memmap(
     chunk_size: int,
     tmp_dir: Path,
     input_layout: str,
-    input_value_range: str,
     input_height: int,
     input_width: int,
 ) -> Tuple[np.memmap, Path, int]:
@@ -153,10 +146,9 @@ def build_calibration_tensor_memmap(
         for image_path in images[start:end]:
             with Image.open(image_path) as image:
                 tensors.append(
-                    preprocess_resnet50(
+                    preprocess_resnet50_for_calibration(
                         image,
                         input_layout=input_layout,
-                        input_value_range=input_value_range,
                     )
                 )
         calibration_batch[start:end] = np.stack(tensors, axis=0).astype(np.float32)
@@ -216,12 +208,6 @@ def resolve_input_layout(inferred_shape: Optional[Tuple[int, int, int, int]]) ->
     if inferred_shape[3] == 3:
         return "nhwc", inferred_shape
     raise RuntimeError(f"Could not infer input layout from shape {inferred_shape}")
-
-
-def resolve_input_value_range(export_metadata: Dict[str, Any]) -> str:
-    if export_metadata.get("input_value_range") in {"normalized", "unit_float", "uint8"}:
-        return str(export_metadata["input_value_range"])
-    return "normalized"
 
 
 def map_tensor_name(name: str, mapping: Dict[str, str]) -> str:
@@ -301,7 +287,7 @@ def main() -> None:
     mapped_output_name = map_tensor_name(onnx_output_name, mapping)
     inferred_input_shape = infer_input_shape(converted_graph, mapped_input_name)
     input_layout, input_shape = resolve_input_layout(inferred_input_shape)
-    input_value_range = resolve_input_value_range(export_metadata)
+    runtime_input_value_range = str(export_metadata.get("input_value_range", "uint8"))
     if input_layout == "nchw":
         _, _, input_height, input_width = input_shape
     else:
@@ -321,7 +307,6 @@ def main() -> None:
         chunk_size=args.calibration_chunk_size,
         tmp_dir=args.artifacts_dir,
         input_layout=input_layout,
-        input_value_range=input_value_range,
         input_height=input_height,
         input_width=input_width,
     )
@@ -396,7 +381,8 @@ def main() -> None:
             "onnx_output_name": onnx_output_name,
             "mapped_input_name": mapped_input_name,
             "input_layout": input_layout,
-            "input_value_range": input_value_range,
+            "runtime_input_value_range": runtime_input_value_range,
+            "calibration_preprocess": "imagenet_normalized",
             "input_shape": list(input_shape),
             "selected_output_node": selected_output,
             "model_export_metadata": export_metadata or None,
