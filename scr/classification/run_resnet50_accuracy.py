@@ -19,8 +19,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--accuracy-script",
         type=Path,
-        default=THIS_DIR / "accuracy-imagenet.py",
-        help="Path to accuracy-imagenet.py",
+        default=THIS_DIR / "evaluate_resnet50_accuracy.py",
+        help="Path to accuracy evaluator script",
     )
     parser.add_argument(
         "--program-path",
@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
         default=5000,
         help="Number of evaluation samples to use from the start of val_map.txt; 0 means all rows",
     )
-    parser.add_argument("--dtype", type=str, default="int32")
+    parser.add_argument("--dtype", type=str, default="auto")
     return parser.parse_args()
 
 

@@ -14,7 +14,6 @@
 ## Что должно быть установлено отдельно
 
 - `mlperf`
-- `scr/classification/accuracy-imagenet.py`
 - `tpu_framework`
 - `tpu_compiler`
 - `torch`
@@ -73,6 +72,7 @@ python /Users/user/tomsk/scr/classification/run_resnet50_performance.py \
 - Если `models/classification/resnet50.onnx` отсутствует, orchestrator может экспортировать его из `torchvision`.
 - По умолчанию экспорт идет с `opset 13`, потому что он безопаснее для vendor-конвертера, чем более новые версии.
 - При первом экспорте pretrained-весов `torchvision` нужен доступ в интернет.
+- Для обычного `resnet50` используется свой evaluator `evaluate_resnet50_accuracy.py`, а не vendor `accuracy-imagenet.py`.
 - `accuracy` по умолчанию использует первые `5000` строк из `data/evaluation/imagenet/val_map.txt`.
 - Для отладки можно уменьшить выборку, например `--accuracy-samples 100` или `run_resnet50_accuracy.py --samples 100`.
 - `performance` следует ПМИ: запускается через `mlperf` и использует значения `qps` по умолчанию:

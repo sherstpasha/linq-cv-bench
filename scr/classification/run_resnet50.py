@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--accuracy-script",
         type=Path,
-        default=THIS_DIR / "accuracy-imagenet.py",
+        default=THIS_DIR / "evaluate_resnet50_accuracy.py",
     )
     parser.add_argument(
         "--artifacts-dir",

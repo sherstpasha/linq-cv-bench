@@ -38,4 +38,3 @@ python /Users/user/tomsk/scr/split_datasets_for_calibration.py --force
 - `tpu_framework`
 - `tpu_compiler`
 - `mlperf`
-- `accuracy-imagenet.py`
