@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--samples",
         type=int,
-        default=5000,
+        default=0,
         help="Number of evaluation samples to use from the start of val_map.txt; 0 means all rows",
     )
     parser.add_argument("--dtype", type=str, default="auto")

@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
         default=REPO_ROOT / "experiments/classification",
     )
     parser.add_argument("--model-name", type=str, default="resnet50")
-    parser.add_argument("--accuracy-samples", type=int, default=5000)
+    parser.add_argument("--accuracy-samples", type=int, default=0)
     parser.add_argument("--performance-runs", type=int, default=3)
     parser.add_argument("--compile-preset", type=str, default="O1", choices=["O1", "O5", "DEFAULT"])
     parser.add_argument("--reexport-model", action="store_true")
