@@ -9,6 +9,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 THIS_DIR = Path(__file__).resolve().parent
 ACCURACY_RE = re.compile(r"accuracy=([0-9.]+)%\s*,\s*good=(\d+)\s*,\s*total=(\d+)")
+PREDICTION_FORMAT_RE = re.compile(r"prediction_format=(\S+)")
+LABEL_SHIFT_RE = re.compile(r"label_shift=([-0-9]+)")
 
 
 def parse_args() -> argparse.Namespace:
@@ -79,7 +81,7 @@ def main() -> None:
     if not val_map_path.exists():
         raise FileNotFoundError(f"val_map.txt not found: {val_map_path}")
     if not args.accuracy_script.exists():
-        raise FileNotFoundError(f"accuracy-imagenet.py not found: {args.accuracy_script}")
+        raise FileNotFoundError(f"Accuracy evaluator not found: {args.accuracy_script}")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     effective_samples = args.samples if args.samples > 0 else count_samples(val_map_path)
@@ -135,17 +137,19 @@ def main() -> None:
     )
     if accuracy_process.returncode != 0:
         raise RuntimeError(
-            f"accuracy-imagenet.py failed with code {accuracy_process.returncode}. "
+            f"Accuracy evaluator failed with code {accuracy_process.returncode}. "
             f"See {args.output_dir / 'accuracy_stderr.txt'}"
         )
 
     combined_output = f"{accuracy_process.stdout}\n{accuracy_process.stderr}"
-    match = ACCURACY_RE.search(combined_output)
-    if not match:
+    accuracy_match = ACCURACY_RE.search(combined_output)
+    if not accuracy_match:
         raise RuntimeError(
-            "Could not parse accuracy-imagenet.py output. "
+            "Could not parse accuracy evaluator output. "
             f"See {args.output_dir / 'accuracy_stdout.txt'}"
         )
+    prediction_format_match = PREDICTION_FORMAT_RE.search(combined_output)
+    label_shift_match = LABEL_SHIFT_RE.search(combined_output)
 
     summary = {
         "program_path": args.program_path.as_posix(),
@@ -155,9 +159,11 @@ def main() -> None:
         "offset": args.offset,
         "requested_samples": args.samples,
         "effective_samples": effective_samples,
-        "accuracy_percent": float(match.group(1)),
-        "good": int(match.group(2)),
-        "total": int(match.group(3)),
+        "prediction_format": prediction_format_match.group(1) if prediction_format_match else None,
+        "label_shift": int(label_shift_match.group(1)) if label_shift_match else None,
+        "accuracy_percent": float(accuracy_match.group(1)),
+        "good": int(accuracy_match.group(2)),
+        "total": int(accuracy_match.group(3)),
         "mlperf_accuracy_log": accuracy_log_path.as_posix(),
         "mlperf_command": mlperf_cmd,
         "accuracy_command": accuracy_cmd,

@@ -51,18 +51,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--performance-runs", type=int, default=3)
     parser.add_argument("--compile-preset", type=str, default="O1", choices=["O1", "O5", "DEFAULT"])
     parser.add_argument("--export-model-if-missing", action="store_true")
+    parser.add_argument("--reexport-model", action="store_true")
     parser.add_argument("--export-opset", type=int, default=13)
     parser.add_argument("--no-pretrained", action="store_true")
     parser.add_argument(
         "--export-input-layout",
         type=str,
-        default="nchw",
+        default="nhwc",
         choices=["nchw", "nhwc"],
     )
     parser.add_argument(
         "--export-input-value-range",
         type=str,
-        default="normalized",
+        default="uint8",
         choices=["normalized", "unit_float", "uint8"],
     )
     parser.add_argument("--skip-build", action="store_true")
@@ -83,6 +84,20 @@ def load_json(path: Path) -> Dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def load_model_export_metadata(model_path: Path) -> Dict:
+    metadata_path = model_path.with_suffix(".json")
+    if not metadata_path.exists():
+        return {}
+    return json.loads(metadata_path.read_text(encoding="utf-8"))
+
+
+def export_contract_matches(metadata: Dict, input_layout: str, input_value_range: str) -> bool:
+    return (
+        metadata.get("input_layout") == input_layout
+        and metadata.get("input_value_range") == input_value_range
+    )
+
+
 def main() -> None:
     args = parse_args()
     py = args.python.as_posix()
@@ -94,9 +109,29 @@ def main() -> None:
     performance_dir = args.experiments_dir / "performance"
     output_json = args.output_json or (args.experiments_dir / "results_summary.json")
     export_cmd = None
+    model_export_metadata = load_model_export_metadata(args.model_path)
 
-    if not args.model_path.exists():
-        if not args.export_model_if_missing:
+    needs_export = args.reexport_model or not args.model_path.exists()
+    if args.model_path.exists() and model_export_metadata:
+        if not export_contract_matches(
+            metadata=model_export_metadata,
+            input_layout=args.export_input_layout,
+            input_value_range=args.export_input_value_range,
+        ):
+            if args.reexport_model:
+                needs_export = True
+            else:
+                raise RuntimeError(
+                    "Existing ONNX export uses a different input contract. "
+                    f"Current file: layout={model_export_metadata.get('input_layout')}, "
+                    f"value_range={model_export_metadata.get('input_value_range')}. "
+                    f"Requested: layout={args.export_input_layout}, "
+                    f"value_range={args.export_input_value_range}. "
+                    "Use --reexport-model or choose another --model-path."
+                )
+
+    if needs_export:
+        if not args.model_path.exists() and not args.export_model_if_missing and not args.reexport_model:
             raise FileNotFoundError(
                 f"Model not found: {args.model_path}. "
                 "Pass --export-model-if-missing to export torchvision ResNet-50 automatically."
@@ -116,6 +151,7 @@ def main() -> None:
         if args.no_pretrained:
             export_cmd.append("--no-pretrained")
         run(export_cmd)
+        model_export_metadata = load_model_export_metadata(args.model_path)
 
     if not args.skip_build:
         build_cmd = [
@@ -194,6 +230,7 @@ def main() -> None:
         "model_export": {
             "command": export_cmd,
             "executed": export_cmd is not None,
+            "metadata": model_export_metadata or None,
         },
         "build": {
             "command": build_cmd,

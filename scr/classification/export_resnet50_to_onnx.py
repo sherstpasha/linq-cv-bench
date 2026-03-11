@@ -55,14 +55,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input-layout",
         type=str,
-        default="nchw",
+        default="nhwc",
         choices=["nchw", "nhwc"],
         help="Exported model input layout",
     )
     parser.add_argument(
         "--input-value-range",
         type=str,
-        default="normalized",
+        default="uint8",
         choices=["normalized", "unit_float", "uint8"],
         help="Expected value range before the first model layer",
     )

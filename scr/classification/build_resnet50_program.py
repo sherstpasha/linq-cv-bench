@@ -59,6 +59,13 @@ def parse_args() -> argparse.Namespace:
         choices=["auto", "nchw", "nhwc"],
         help="Input tensor layout for calibration and compile; auto uses converted TF graph shape",
     )
+    parser.add_argument(
+        "--input-value-range",
+        type=str,
+        default="auto",
+        choices=["auto", "normalized", "unit_float", "uint8"],
+        help="Calibration value range; auto uses export metadata next to the ONNX model if available",
+    )
     parser.add_argument("--num-calibration-images", type=int, default=0)
     parser.add_argument("--calibration-chunk-size", type=int, default=256)
     parser.add_argument("--percentile", type=float, default=100.0)
@@ -82,7 +89,14 @@ def list_images(root: Path) -> List[Path]:
     return images
 
 
-def preprocess_resnet50(image: Image.Image, input_layout: str) -> np.ndarray:
+def load_model_export_metadata(model_path: Path) -> Dict[str, Any]:
+    metadata_path = model_path.with_suffix(".json")
+    if not metadata_path.exists():
+        return {}
+    return json.loads(metadata_path.read_text(encoding="utf-8"))
+
+
+def preprocess_resnet50(image: Image.Image, input_layout: str, input_value_range: str) -> np.ndarray:
     image = image.convert("RGB")
     width, height = image.size
     scale = 256.0 / min(width, height)
@@ -93,8 +107,14 @@ def preprocess_resnet50(image: Image.Image, input_layout: str) -> np.ndarray:
     top = (new_h - 224) // 2
     image = image.crop((left, top, left + 224, top + 224))
 
-    arr = np.asarray(image, dtype=np.float32) / 255.0
-    arr = (arr - IMAGENET_MEAN) / IMAGENET_STD
+    arr = np.asarray(image, dtype=np.float32)
+    if input_value_range == "normalized":
+        arr = arr / 255.0
+        arr = (arr - IMAGENET_MEAN) / IMAGENET_STD
+    elif input_value_range == "unit_float":
+        arr = arr / 255.0
+    elif input_value_range != "uint8":
+        raise RuntimeError(f"Unsupported input value range: {input_value_range}")
     if input_layout == "nchw":
         arr = np.transpose(arr, (2, 0, 1))
     elif input_layout != "nhwc":
@@ -108,6 +128,7 @@ def build_calibration_tensor_memmap(
     chunk_size: int,
     tmp_dir: Path,
     input_layout: str,
+    input_value_range: str,
     input_height: int,
     input_width: int,
 ) -> Tuple[np.memmap, Path, int]:
@@ -145,7 +166,13 @@ def build_calibration_tensor_memmap(
         tensors: List[np.ndarray] = []
         for image_path in images[start:end]:
             with Image.open(image_path) as image:
-                tensors.append(preprocess_resnet50(image, input_layout=input_layout))
+                tensors.append(
+                    preprocess_resnet50(
+                        image,
+                        input_layout=input_layout,
+                        input_value_range=input_value_range,
+                    )
+                )
         calibration_batch[start:end] = np.stack(tensors, axis=0).astype(np.float32)
         calibration_batch.flush()
 
@@ -220,6 +247,14 @@ def resolve_input_layout(
     return requested_layout, inferred_shape
 
 
+def resolve_input_value_range(requested: str, export_metadata: Dict[str, Any]) -> str:
+    if requested != "auto":
+        return requested
+    if export_metadata.get("input_value_range") in {"normalized", "unit_float", "uint8"}:
+        return str(export_metadata["input_value_range"])
+    return "normalized"
+
+
 def map_tensor_name(name: str, mapping: Dict[str, str]) -> str:
     return mapping.get(name, name)
 
@@ -278,6 +313,7 @@ def main() -> None:
 
     args.artifacts_dir.mkdir(parents=True, exist_ok=True)
     metadata_out = args.metadata_out or (args.artifacts_dir / "build_summary.json")
+    export_metadata = load_model_export_metadata(args.model_path)
     qm_path = args.artifacts_dir / f"{args.model_name}.qm"
     quantized_graph_path = args.artifacts_dir / f"{args.model_name}_quantized.pb"
 
@@ -296,6 +332,7 @@ def main() -> None:
     mapped_output_name = map_tensor_name(onnx_output_name, mapping)
     inferred_input_shape = infer_input_shape(converted_graph, mapped_input_name)
     input_layout, input_shape = resolve_input_layout(args.input_layout, inferred_input_shape)
+    input_value_range = resolve_input_value_range(args.input_value_range, export_metadata)
     if input_layout == "nchw":
         _, _, input_height, input_width = input_shape
     else:
@@ -315,6 +352,7 @@ def main() -> None:
         chunk_size=args.calibration_chunk_size,
         tmp_dir=args.artifacts_dir,
         input_layout=input_layout,
+        input_value_range=input_value_range,
         input_height=input_height,
         input_width=input_width,
     )
@@ -389,8 +427,10 @@ def main() -> None:
             "onnx_output_name": onnx_output_name,
             "mapped_input_name": mapped_input_name,
             "input_layout": input_layout,
+            "input_value_range": input_value_range,
             "input_shape": list(input_shape),
             "selected_output_node": selected_output,
+            "model_export_metadata": export_metadata or None,
             "qm_path": qm_path.as_posix(),
             "compiled_programs": compiled_programs,
             "quantized_graph_pb": quantized_graph_path.as_posix() if args.save_quantized_graph_pb else None,
