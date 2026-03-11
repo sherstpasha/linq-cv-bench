@@ -43,6 +43,14 @@ python /Users/user/tomsk/scr/classification/run_resnet50.py \
 python /Users/user/tomsk/scr/classification/export_resnet50_to_onnx.py
 ```
 
+Диагностический экспорт под возможный `mlperf`-контракт `NHWC + uint8`:
+
+```bash
+python /Users/user/tomsk/scr/classification/export_resnet50_to_onnx.py \
+  --input-layout nhwc \
+  --input-value-range uint8
+```
+
 Сборка артефактов:
 
 ```bash
@@ -72,6 +80,8 @@ python /Users/user/tomsk/scr/classification/run_resnet50_performance.py \
 - Если `models/classification/resnet50.onnx` отсутствует, orchestrator может экспортировать его из `torchvision`.
 - По умолчанию экспорт идет с `opset 13`, потому что он безопаснее для vendor-конвертера, чем более новые версии.
 - При первом экспорте pretrained-весов `torchvision` нужен доступ в интернет.
+- По умолчанию экспортируется модель с входом `NCHW + normalized`.
+- Для диагностики можно попробовать `--export-input-layout nhwc --export-input-value-range uint8` в `run_resnet50.py`.
 - Для обычного `resnet50` используется свой evaluator `evaluate_resnet50_accuracy.py`, а не vendor `accuracy-imagenet.py`.
 - `accuracy` по умолчанию использует первые `5000` строк из `data/evaluation/imagenet/val_map.txt`.
 - Для отладки можно уменьшить выборку, например `--accuracy-samples 100` или `run_resnet50_accuracy.py --samples 100`.

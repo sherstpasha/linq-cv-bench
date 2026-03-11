@@ -53,6 +53,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--export-model-if-missing", action="store_true")
     parser.add_argument("--export-opset", type=int, default=13)
     parser.add_argument("--no-pretrained", action="store_true")
+    parser.add_argument(
+        "--export-input-layout",
+        type=str,
+        default="nchw",
+        choices=["nchw", "nhwc"],
+    )
+    parser.add_argument(
+        "--export-input-value-range",
+        type=str,
+        default="normalized",
+        choices=["normalized", "unit_float", "uint8"],
+    )
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-accuracy", action="store_true")
     parser.add_argument("--skip-performance", action="store_true")
@@ -96,6 +108,10 @@ def main() -> None:
             args.model_path.as_posix(),
             "--opset",
             str(args.export_opset),
+            "--input-layout",
+            args.export_input_layout,
+            "--input-value-range",
+            args.export_input_value_range,
         ]
         if args.no_pretrained:
             export_cmd.append("--no-pretrained")
