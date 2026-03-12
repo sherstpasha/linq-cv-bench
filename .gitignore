@@ -35,4 +35,5 @@ pip-wheel-metadata/
 
 # Data
 data/
+artifacts/
 experiments*/
