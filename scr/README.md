@@ -12,10 +12,10 @@
   - `classification/run_resnet50_performance.py`
   - `classification/run_resnet50.py`
 - детекция:
-  - `detection/export_yolov5s_to_onnx.py`
-  - `detection/run_yolov5_onnx_reference.py`
-  - `detection/metrics.py`
-  - `detection/run_yolov5_onnx.py`
+  - `detection/download_ssd_mobilenet_v1_model.py`
+  - `detection/build_ssd_mobilenet_v1_program.py`
+  - `detection/run_ssd_mobilenet_v1_tpu.py`
+  - `detection/run_ssd_mobilenet_v1.py`
 
 ## Данные
 
@@ -34,17 +34,6 @@ python /Users/user/tomsk/scr/split_datasets_for_calibration.py --force
 Подробный порядок запуска описан в:
 
 - `scr/classification/README.md`
-
-## Детекция
-
-Первый рабочий этап для детекции:
-
-- экспорт классического `YOLOv5s` в `ONNX`
-- reference-inference на фрагменте COCO
-- `mAP` через COCOeval
-
-Подробный порядок запуска описан в:
-
 - `scr/detection/README.md`
 
 ## Внешние зависимости
