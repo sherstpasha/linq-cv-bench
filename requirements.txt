@@ -1,10 +1,11 @@
-numpy
-onnx
-onnxruntime
+numpy==1.26.4
+onnx~=1.16.0
+onnxruntime~=1.18.0
 opencv-python
 Pillow
 pycocotools
-tensorflow
+setuptools<81
+tensorflow==2.14.1
 torch
 torchvision
 tqdm
