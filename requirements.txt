@@ -1,5 +1,6 @@
 numpy
 onnx
+onnxruntime
 Pillow
 tensorflow
 torch

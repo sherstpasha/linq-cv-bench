@@ -18,6 +18,7 @@
 - `tpu_compiler`
 - `torch`
 - `torchvision`
+- `onnxruntime`
 
 ## Быстрый запуск
 
@@ -58,6 +59,14 @@ python /Users/user/tomsk/scr/classification/run_resnet50_accuracy.py \
   --program-path /Users/user/tomsk/artifacts/classification/resnet50_b1.tpu
 ```
 
+Reference-check для текущего `ONNX` без `mlperf` и без `TPU`:
+
+```bash
+python /Users/user/tomsk/scr/classification/run_resnet50_onnx_reference.py \
+  --model-path /Users/user/tomsk/models/classification/resnet50.onnx \
+  --dataset-dir /Users/user/tomsk/data/evaluation/imagenet
+```
+
 Performance:
 
 ```bash
@@ -77,6 +86,7 @@ python /Users/user/tomsk/scr/classification/run_resnet50_performance.py \
 - Калибровка в build-контуре фиксирована: resize -> center crop -> `ImageNet mean/std` normalization.
 - Если рядом с `ONNX` лежит metadata JSON от старого экспорта, используй `--reexport-model` или другой `--model-path`.
 - Для обычного `resnet50` используется свой evaluator `evaluate_resnet50_accuracy.py`, а не vendor `accuracy-imagenet.py`.
+- `run_resnet50_onnx_reference.py` нужен только для диагностики: он прогоняет текущий `ONNX` на тех же данных и по тому же `val_map.txt`.
 - `accuracy` по умолчанию использует весь `data/evaluation/imagenet/val_map.txt`.
 - Для быстрой проверки можно уменьшить выборку, например `--accuracy-samples 100` или `run_resnet50_accuracy.py --samples 100`.
 - `performance` следует ПМИ: запускается через `mlperf` и использует значения `qps` по умолчанию:
