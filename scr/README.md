@@ -12,6 +12,9 @@
   - `classification/run_resnet50_performance.py`
   - `classification/run_resnet50.py`
 - детекция:
+  - `detection/run_tiny_yolo3_accuracy.py`
+  - `detection/run_tiny_yolo3_performance.py`
+  - `detection/run_tiny_yolo3_vendor.py`
   - `detection/export_yolov8s_to_onnx.py`
   - `detection/build_yolov8_program.py`
   - `detection/run_yolov8_onnx.py`

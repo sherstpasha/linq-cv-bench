@@ -50,6 +50,12 @@ def load_json(path: Path) -> Dict:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run full YOLOv8s pipeline: export, ONNX reference, build TPU, direct TPU, COCO metrics")
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
+    parser.add_argument(
+        "--export-python",
+        type=Path,
+        default=None,
+        help="Python interpreter for Ultralytics export step. Defaults to --python.",
+    )
     parser.add_argument("--weights", type=str, default="yolov8s.pt")
     parser.add_argument("--model-path", type=Path, default=REPO_ROOT / "models/detection/yolov8s.onnx")
     parser.add_argument("--calibration-dir", type=Path, default=REPO_ROOT / "data/calibration/MSCOCO2017/val2017")
@@ -78,6 +84,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     py = args.python.as_posix()
+    export_py = args.export_python.as_posix() if args.export_python else py
 
     args.artifacts_dir.mkdir(parents=True, exist_ok=True)
     args.experiments_dir.mkdir(parents=True, exist_ok=True)
@@ -96,7 +103,7 @@ def main() -> None:
     export_cmd: Optional[List[str]] = None
     if args.reexport_model or not args.model_path.exists():
         export_cmd = [
-            py,
+            export_py,
             (THIS_DIR / "export_yolov8s_to_onnx.py").as_posix(),
             "--weights",
             args.weights,
@@ -238,6 +245,8 @@ def main() -> None:
 
     summary = {
         "pipeline": "yolov8s_detection",
+        "python": py,
+        "export_python": export_py,
         "weights": args.weights,
         "model_name": args.model_name,
         "model_path": args.model_path.as_posix(),
