@@ -18,11 +18,10 @@ class RetinaNetExportWrapper(nn.Module):
         self.score_threshold = float(score_threshold)
 
     def _pad_detections(self, detections: torch.Tensor) -> torch.Tensor:
-        count = detections.shape[0]
-        if count >= self.max_det:
-            return detections[: self.max_det]
-        pad = torch.zeros((self.max_det - count, 6), dtype=detections.dtype, device=detections.device)
-        return torch.cat([detections, pad], dim=0)
+        # Avoid Python control flow during export. Concatenate with a fixed zero
+        # buffer and slice back to max_det so the graph keeps a real input.
+        pad = detections.new_zeros((self.max_det, 6))
+        return torch.cat([detections, pad], dim=0)[: self.max_det]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         image = x[0]
@@ -35,11 +34,7 @@ class RetinaNetExportWrapper(nn.Module):
             boxes = boxes[keep]
             scores = scores[keep]
             labels = labels[keep]
-        detections = (
-            torch.cat([boxes, scores.unsqueeze(1), labels.unsqueeze(1)], dim=1)
-            if boxes.numel() > 0
-            else boxes.new_zeros((0, 6))
-        )
+        detections = torch.cat([boxes, scores.unsqueeze(1), labels.unsqueeze(1)], dim=1)
         return self._pad_detections(detections).unsqueeze(0)
 
 
@@ -81,7 +76,7 @@ def main() -> None:
             dynamo=False,
             export_params=True,
             opset_version=args.opset,
-            do_constant_folding=True,
+            do_constant_folding=False,
             input_names=["images"],
             output_names=["detections"],
             dynamic_axes={
