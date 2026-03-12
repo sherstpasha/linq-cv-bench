@@ -48,6 +48,19 @@ def run(cmd: list[str], cwd: Optional[Path] = None) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
+def patch_torch_load_compat(repo_dir: Path) -> None:
+    experimental_py = repo_dir / "models/experimental.py"
+    if not experimental_py.exists():
+        return
+
+    text = experimental_py.read_text(encoding="utf-8")
+    old = "ckpt = torch.load(attempt_download(w), map_location='cpu')  # load"
+    new = "ckpt = torch.load(attempt_download(w), map_location='cpu', weights_only=False)  # load"
+    if old in text and new not in text:
+        experimental_py.write_text(text.replace(old, new), encoding="utf-8")
+        print(f"Patched torch.load compatibility in: {experimental_py}")
+
+
 def ensure_repo(repo_dir: Path, repo_ref: str, clone_if_missing: bool) -> None:
     if repo_dir.exists():
         return
@@ -75,6 +88,7 @@ def main() -> None:
         raise RuntimeError("--batch-size must be > 0")
 
     ensure_repo(args.repo_dir, args.repo_ref, args.clone_if_missing)
+    patch_torch_load_compat(args.repo_dir)
     ensure_weights(args.weights, args.weights_url, args.skip_download_weights)
 
     if args.install_requirements:
