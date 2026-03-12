@@ -57,10 +57,10 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "experiments/detection/tiny_yolo3_vendor/metrics.txt",
     )
-    parser.add_argument("--input-tensor-name", type=str, default=None)
+    parser.add_argument("--input-tensor-name", type=str, default="input_1:0")
     parser.add_argument("--output-tensor-name", type=str, default=None)
     parser.add_argument("--img-size", type=int, default=416)
-    parser.add_argument("--input-layout", choices=["nchw", "nhwc"], default="nchw")
+    parser.add_argument("--input-layout", choices=["nchw", "nhwc"], default="nhwc")
     parser.add_argument("--input-range", choices=["unit_float", "uint8"], default="unit_float")
     parser.add_argument("--conf-thres", type=float, default=0.001)
     parser.add_argument("--iou-thres", type=float, default=0.45)

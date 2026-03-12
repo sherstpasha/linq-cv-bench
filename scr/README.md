@@ -21,6 +21,14 @@
   - `detection/run_yolov8_tpu.py`
   - `detection/run_yolov8.py`
   - `detection/metrics.py`
+- сегментация:
+  - `segmentation/export_fcn_resnet50_to_onnx.py`
+  - `segmentation/infer_fcn_resnet50_onnx.py`
+  - `segmentation/quantize_fcn_resnet50_h1.py`
+  - `segmentation/compile_fcn_resnet50_h1.py`
+  - `segmentation/infer_fcn_resnet50_h1_tpu.py`
+  - `segmentation/metrics.py`
+  - `segmentation/run_full_h1_segmentation.py`
 
 ## Данные
 
@@ -45,6 +53,12 @@ python /Users/user/tomsk/scr/split_datasets_for_calibration.py --force
 Подробный порядок запуска описан в:
 
 - `scr/detection/README.md`
+
+## Сегментация
+
+Подробный порядок запуска описан в:
+
+- `scr/segmentation/README.md`
 
 ## Внешние зависимости
 
