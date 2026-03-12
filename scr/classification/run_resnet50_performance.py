@@ -21,6 +21,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "artifacts/classification",
     )
+    parser.add_argument(
+        "--program-path",
+        type=Path,
+        default=None,
+        help="Optional explicit .tpu program path; overrides artifacts-dir/model-name convention",
+    )
     parser.add_argument("--model-name", type=str, default="resnet50")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument(
@@ -66,7 +72,7 @@ def main() -> None:
     if args.runs <= 0:
         raise RuntimeError("--runs must be > 0")
 
-    program_path = args.artifacts_dir / f"{args.model_name}_b{args.batch_size}.tpu"
+    program_path = args.program_path or (args.artifacts_dir / f"{args.model_name}_b{args.batch_size}.tpu")
     if not program_path.exists():
         raise FileNotFoundError(f"TPU program not found: {program_path}")
 

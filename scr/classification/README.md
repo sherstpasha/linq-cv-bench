@@ -75,6 +75,16 @@ python /Users/user/tomsk/scr/classification/run_resnet50_tpu_reference.py \
   --dataset-dir /Users/user/tomsk/data/evaluation/imagenet
 ```
 
+Запуск vendor `resnet50_mlperf` строго по ПМИ:
+
+```bash
+python /Users/user/tomsk/scr/classification/run_vendor_resnet50_mlperf.py \
+  --mlperf-binary /path/to/mlperf \
+  --program-b1 /path/to/resnet50_mlperf_b1_*.tpu \
+  --program-b8 /path/to/resnet50_mlperf_b8_*.tpu \
+  --dataset-dir /Users/user/tomsk/data/evaluation/imagenet
+```
+
 Performance:
 
 ```bash
@@ -96,6 +106,7 @@ python /Users/user/tomsk/scr/classification/run_resnet50_performance.py \
 - Для обычного `resnet50` используется свой evaluator `evaluate_resnet50_accuracy.py`, а не vendor `accuracy-imagenet.py`.
 - `run_resnet50_onnx_reference.py` нужен только для диагностики: он прогоняет текущий `ONNX` на тех же данных и по тому же `val_map.txt`.
 - `run_resnet50_tpu_reference.py` нужен только для диагностики: он прогоняет текущий `.tpu` напрямую через `pytpu`, без `mlperf`.
+- `run_vendor_resnet50_mlperf.py` нужен для формального прогона vendor `resnet50_mlperf` по ПМИ: `accuracy` на `1000`, `performance` по `3` повтора для `b1` и `b8`.
 - `accuracy` по умолчанию использует весь `data/evaluation/imagenet/val_map.txt`.
 - Для быстрой проверки можно уменьшить выборку, например `--accuracy-samples 100` или `run_resnet50_accuracy.py --samples 100`.
 - `performance` следует ПМИ: запускается через `mlperf` и использует значения `qps` по умолчанию:
