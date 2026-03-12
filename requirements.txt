@@ -9,3 +9,4 @@ tensorflow==2.14.1
 torch
 torchvision
 tqdm
+ultralytics

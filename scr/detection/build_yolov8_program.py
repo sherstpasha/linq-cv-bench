@@ -8,44 +8,28 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
+from coco_utils import letterbox
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build quantized and compiled IVA H1 artifacts for RetinaNet")
-    parser.add_argument(
-        "--model-path",
-        type=Path,
-        default=REPO_ROOT / "models/detection/retinanet_resnet50_fpn.onnx",
-    )
-    parser.add_argument(
-        "--calibration-dir",
-        type=Path,
-        default=REPO_ROOT / "data/calibration/MSCOCO2017/val2017",
-    )
-    parser.add_argument(
-        "--artifacts-dir",
-        type=Path,
-        default=REPO_ROOT / "artifacts/detection/retinanet",
-    )
-    parser.add_argument("--model-name", type=str, default="retinanet_resnet50_fpn")
+    parser = argparse.ArgumentParser(description="Build quantized and compiled IVA H1 artifacts for YOLOv8s")
+    parser.add_argument("--model-path", type=Path, default=REPO_ROOT / "models/detection/yolov8s.onnx")
+    parser.add_argument("--calibration-dir", type=Path, default=REPO_ROOT / "data/calibration/MSCOCO2017/val2017")
+    parser.add_argument("--artifacts-dir", type=Path, default=REPO_ROOT / "artifacts/detection/yolov8s")
+    parser.add_argument("--model-name", type=str, default="yolov8s")
     parser.add_argument("--input-tensor-name", type=str, default=None)
     parser.add_argument("--output-tensor-name", type=str, default=None)
     parser.add_argument("--num-calibration-images", type=int, default=500)
-    parser.add_argument("--calibration-chunk-size", type=int, default=64)
-    parser.add_argument("--height", type=int, default=800)
-    parser.add_argument("--width", type=int, default=800)
+    parser.add_argument("--calibration-chunk-size", type=int, default=128)
+    parser.add_argument("--img-size", type=int, default=640)
     parser.add_argument("--percentile", type=float, default=100.0)
     parser.add_argument("--batch-axis", type=int, default=0)
     parser.add_argument("--save-quantized-graph-pb", action="store_true")
-    parser.add_argument(
-        "--compile-preset",
-        type=str,
-        default="O1",
-        choices=["O1", "O5", "DEFAULT"],
-    )
+    parser.add_argument("--compile-preset", type=str, default="O1", choices=["O1", "O5", "DEFAULT"])
     parser.add_argument("--batch-sizes", type=int, nargs="+", default=[1, 8])
     parser.add_argument("--metadata-out", type=Path, default=None)
     return parser.parse_args()
@@ -59,12 +43,12 @@ def list_images(root: Path) -> List[Path]:
     return images
 
 
-def preprocess(path: Path, width: int, height: int) -> np.ndarray:
+def preprocess_yolo(path: Path, img_size: int) -> np.ndarray:
     img = cv2.imread(path.as_posix())
     if img is None:
         raise RuntimeError(f"Failed to read image: {path}")
-    img = cv2.resize(img, (width, height), interpolation=cv2.INTER_LINEAR)
-    x = img[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
+    img_lb, _, _, _ = letterbox(img, img_size)
+    x = img_lb[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
     return x.astype(np.float32)
 
 
@@ -72,8 +56,7 @@ def build_calibration_tensor_memmap(
     calibration_dir: Path,
     num_images: int,
     chunk_size: int,
-    width: int,
-    height: int,
+    img_size: int,
     tmp_dir: Path,
 ) -> Tuple[np.memmap, Path, int]:
     images = list_images(calibration_dir)
@@ -87,7 +70,7 @@ def build_calibration_tensor_memmap(
     sample_count = len(images)
     tmp_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
-        prefix="retinanet_calibration_",
+        prefix="yolov8_calibration_",
         suffix=".dat",
         dir=tmp_dir.as_posix(),
         delete=False,
@@ -98,23 +81,21 @@ def build_calibration_tensor_memmap(
         memmap_path.as_posix(),
         dtype=np.float32,
         mode="w+",
-        shape=(sample_count, 3, height, width),
+        shape=(sample_count, 3, img_size, img_size),
     )
 
     total_chunks = math.ceil(sample_count / chunk_size)
     for chunk_idx in range(total_chunks):
         start = chunk_idx * chunk_size
         end = min(sample_count, (chunk_idx + 1) * chunk_size)
-        tensors: List[np.ndarray] = []
-        for img_path in images[start:end]:
-            tensors.append(preprocess(img_path, width=width, height=height))
+        tensors = [preprocess_yolo(img_path, img_size=img_size) for img_path in images[start:end]]
         batch[start:end] = np.stack(tensors, axis=0).astype(np.float32)
         batch.flush()
 
     return batch, memmap_path, sample_count
 
 
-def force_static_onnx_input_shape(onnx_model: Any, input_name: str, height: int, width: int) -> None:
+def force_static_onnx_input_shape(onnx_model: Any, input_name: str, img_size: int) -> None:
     for value_info in onnx_model.graph.input:
         if value_info.name != input_name:
             continue
@@ -123,8 +104,8 @@ def force_static_onnx_input_shape(onnx_model: Any, input_name: str, height: int,
             raise RuntimeError(f"Expected 4D input tensor, got {len(dims)} dims for '{input_name}'")
         dims[0].dim_value = 1
         dims[1].dim_value = 3
-        dims[2].dim_value = int(height)
-        dims[3].dim_value = int(width)
+        dims[2].dim_value = int(img_size)
+        dims[3].dim_value = int(img_size)
         return
     raise KeyError(f"Input tensor '{input_name}' not found in ONNX graph")
 
@@ -214,15 +195,18 @@ def main() -> None:
     if not args.calibration_dir.exists():
         raise FileNotFoundError(f"Calibration dir not found: {args.calibration_dir}")
 
-    import onnx
-    from tpu_framework import (  # type: ignore
-        Network,
-        QuantizedModel,
-        RegularModel,
-        TPU_128x128_PARAMS,
-        TpuProgram,
-        compiler,
-    )
+    try:
+        import onnx
+        from tpu_framework import (  # type: ignore
+            Network,
+            QuantizedModel,
+            RegularModel,
+            TPU_128x128_PARAMS,
+            TpuProgram,
+            compiler,
+        )
+    except Exception as error:
+        raise RuntimeError("Missing dependencies: onnx, tpu_framework, tpu_compiler") from error
 
     args.artifacts_dir.mkdir(parents=True, exist_ok=True)
     metadata_out = args.metadata_out or (args.artifacts_dir / "build_summary.json")
@@ -238,7 +222,7 @@ def main() -> None:
     onnx_output_default = onnx_model.graph.output[0].name
     onnx_input_name = args.input_tensor_name or onnx_input_default
     onnx_output_name = args.output_tensor_name or onnx_output_default
-    force_static_onnx_input_shape(onnx_model, input_name=onnx_input_name, height=args.height, width=args.width)
+    force_static_onnx_input_shape(onnx_model, input_name=onnx_input_name, img_size=args.img_size)
 
     converted_graph, mapping = load_converted_graph(onnx_model)
     graph_def = to_graph_def(converted_graph)
@@ -250,22 +234,26 @@ def main() -> None:
         calibration_dir=args.calibration_dir,
         num_images=args.num_calibration_images,
         chunk_size=args.calibration_chunk_size,
-        width=args.width,
-        height=args.height,
+        img_size=args.img_size,
         tmp_dir=args.artifacts_dir,
     )
     calibration_dict = {mapped_input: calib_tensor}
 
+    selected_output: Optional[str] = None
+    compiled_programs: Dict[str, str] = {}
     try:
-        input_shapes = {mapped_input: (1, 3, args.height, args.width)}
+        input_shapes = {mapped_input: (1, 3, args.img_size, args.img_size)}
         output_candidates = unique(
-            [mapped_output, tensor_name_to_node_name(mapped_output), onnx_output_name, f"{onnx_output_name}:0"]
+            [
+                mapped_output,
+                tensor_name_to_node_name(mapped_output),
+                onnx_output_name,
+                f"{onnx_output_name}:0",
+            ]
         )
 
         regular_model = None
-        selected_output = None
-        last_error: Optional[Exception] = None
-
+        errors: Dict[str, str] = {}
         for output_candidate in output_candidates:
             model_kwargs = {
                 "original_graph_def": graph_def,
@@ -279,18 +267,13 @@ def main() -> None:
                 selected_output = output_candidate
                 break
             except Exception as error:
-                last_error = error
+                errors[output_candidate] = str(error)
 
         if regular_model is None:
-            raise RuntimeError(
-                f"Could not initialize RegularModel with outputs: {output_candidates}"
-            ) from last_error
+            raise RuntimeError(f"Could not initialize RegularModel with outputs {output_candidates}. Errors: {errors}")
 
         try:
-            thresholds = regular_model.calibrate(
-                calibration_data=calibration_dict,
-                percentile=args.percentile,
-            )
+            thresholds = regular_model.calibrate(calibration_data=calibration_dict, percentile=args.percentile)
         except TypeError:
             thresholds = regular_model.calibrate(calibration_data=calibration_dict)
 
@@ -300,14 +283,13 @@ def main() -> None:
         if args.save_quantized_graph_pb:
             quant_graph = quantized_model.as_graph(batch_size=1, batch_axis=args.batch_axis)
             quant_graph_def = to_graph_def(quant_graph)
-            with quant_pb.open("wb") as file:
-                file.write(quant_graph_def.SerializeToString())
+            quant_pb.write_bytes(quant_graph_def.SerializeToString())
 
-        compiled_programs: Dict[str, str] = {}
         preset = resolve_preset(args.compile_preset)
-        loaded_quantized_model = QuantizedModel.load(qm_path.as_posix())
-        for batch_size in sorted(set(args.batch_sizes)):
-            network, _ = Network.from_quantized_model(loaded_quantized_model)
+        for batch_size in args.batch_sizes:
+            if batch_size <= 0:
+                raise RuntimeError(f"Batch size must be > 0, got {batch_size}")
+            network, _ = Network.from_quantized_model(quantized_model)
             network.set_batch(batch_size)
             executable, tensor_descriptions = compiler.compile_(
                 hardware_parameters=TPU_128x128_PARAMS,
@@ -315,27 +297,27 @@ def main() -> None:
                 parameters=preset,
             )
             tpu_program = TpuProgram.from_executable(executable, tensor_descriptions)
-            program_path = args.artifacts_dir / f"{args.model_name}_b{batch_size}.tpu"
-            tpu_program.to_file(program_path.as_posix())
-            compiled_programs[str(batch_size)] = program_path.as_posix()
+            output_path = args.artifacts_dir / f"{args.model_name}_b{batch_size}.tpu"
+            tpu_program.to_file(output_path.as_posix())
+            compiled_programs[str(batch_size)] = output_path.as_posix()
 
         summary = {
             "model_name": args.model_name,
             "model_path": args.model_path.as_posix(),
-            "model_export_metadata": export_metadata or None,
             "calibration_dir": args.calibration_dir.as_posix(),
             "calibration_samples": calibration_sample_count,
             "compile_preset": args.compile_preset,
-            "batch_sizes": sorted(set(args.batch_sizes)),
+            "batch_sizes": args.batch_sizes,
             "onnx_input_name": onnx_input_name,
             "onnx_output_name": onnx_output_name,
             "mapped_input_name": mapped_input,
             "mapped_output_name": mapped_output,
             "input_layout": "nchw",
             "runtime_input_value_range": "unit_float",
-            "calibration_preprocess": "resize_unit_float",
-            "input_shape": [1, 3, args.height, args.width],
+            "calibration_preprocess": "yolo_letterbox_unit_float",
+            "input_shape": [1, 3, args.img_size, args.img_size],
             "selected_output_node": selected_output,
+            "model_export_metadata": export_metadata,
             "qm_path": qm_path.as_posix(),
             "compiled_programs": compiled_programs,
             "quantized_graph_pb": quant_pb.as_posix() if args.save_quantized_graph_pb else None,
@@ -343,6 +325,10 @@ def main() -> None:
         metadata_out.write_text(json.dumps(summary, indent=2), encoding="utf-8")
         print(f"Saved build summary: {metadata_out}")
     finally:
+        try:
+            del calib_tensor
+        except Exception:
+            pass
         try:
             memmap_path.unlink(missing_ok=True)
         except Exception:

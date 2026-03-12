@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -9,23 +10,19 @@ import cv2
 import numpy as np
 from pycocotools.coco import COCO
 
+os.environ.setdefault("YOLO_AUTOINSTALL", "False")
+
+from coco_utils import COCO80_TO_91, letterbox
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BATCH_RE = re.compile(r"_b(\d+)\.tpu$")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run RetinaNet H1 TPU inference on COCO and save predictions")
-    parser.add_argument(
-        "--program-path",
-        type=Path,
-        default=REPO_ROOT / "artifacts/detection/retinanet/retinanet_resnet50_fpn_b8.tpu",
-    )
-    parser.add_argument(
-        "--img-dir",
-        type=Path,
-        default=REPO_ROOT / "data/evaluation/MSCOCO2017/val2017",
-    )
+    parser = argparse.ArgumentParser(description="Run YOLOv8s H1 TPU inference on COCO and save predictions")
+    parser.add_argument("--program-path", type=Path, default=REPO_ROOT / "artifacts/detection/yolov8s/yolov8s_b8.tpu")
+    parser.add_argument("--img-dir", type=Path, default=REPO_ROOT / "data/evaluation/MSCOCO2017/val2017")
     parser.add_argument(
         "--ann-file",
         type=Path,
@@ -34,38 +31,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--predictions-out",
         type=Path,
-        default=REPO_ROOT / "experiments/detection/retinanet/predictions_tpu.json",
+        default=REPO_ROOT / "experiments/detection/yolov8s/predictions_tpu.json",
     )
     parser.add_argument(
         "--summary-out",
         type=Path,
-        default=REPO_ROOT / "experiments/detection/retinanet/tpu_summary.json",
+        default=REPO_ROOT / "experiments/detection/yolov8s/tpu_summary.json",
     )
     parser.add_argument(
         "--build-summary",
         type=Path,
-        default=REPO_ROOT / "artifacts/detection/retinanet/build_summary.json",
+        default=REPO_ROOT / "artifacts/detection/yolov8s/build_summary.json",
     )
     parser.add_argument("--input-tensor-name", type=str, default=None)
     parser.add_argument("--output-tensor-name", type=str, default=None)
-    parser.add_argument("--height", type=int, default=800)
-    parser.add_argument("--width", type=int, default=800)
+    parser.add_argument("--img-size", type=int, default=640)
     parser.add_argument("--conf-thres", type=float, default=0.001)
+    parser.add_argument("--iou-thres", type=float, default=0.65)
+    parser.add_argument("--max-det", type=int, default=300)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--warmup-images", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=0)
     parser.add_argument("--device", type=str, default=None)
     return parser.parse_args()
-
-
-def preprocess(path: Path, width: int, height: int) -> tuple[np.ndarray, tuple[int, int]]:
-    img = cv2.imread(path.as_posix())
-    if img is None:
-        raise RuntimeError(f"Failed to read image: {path}")
-    img_h, img_w = img.shape[:2]
-    img = cv2.resize(img, (width, height), interpolation=cv2.INTER_LINEAR)
-    x = img[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
-    return np.expand_dims(x, axis=0), (img_h, img_w)
 
 
 def key_candidates(name: Optional[str]) -> List[str]:
@@ -88,7 +76,7 @@ def load_io_names(build_summary: Path, input_override: Optional[str], output_ove
         data = json.loads(build_summary.read_text(encoding="utf-8"))
     except Exception:
         return None, None
-    return data.get("mapped_input_name"), data.get("mapped_output_name")
+    return data.get("mapped_input_name"), data.get("selected_output_node") or data.get("mapped_output_name")
 
 
 def infer_batch_size(program_path: Path, build_summary_path: Path, requested_batch_size: int) -> int:
@@ -157,7 +145,7 @@ def collect_runtime_input_hints(inference: object, tpu_program: object) -> List[
     return uniq
 
 
-def resolve_runtime_input_name(inference: object, preferred_input: Optional[str], probe_x: np.ndarray, runtime_hints: List[str]) -> tuple[str, Dict[str, np.ndarray]]:
+def resolve_runtime_input_name(inference: object, preferred_input: Optional[str], probe_x: np.ndarray, runtime_hints: List[str]) -> Tuple[str, Dict[str, np.ndarray]]:
     candidates = key_candidates(preferred_input) + runtime_hints
     tried = set()
     errors: Dict[str, str] = {}
@@ -180,18 +168,19 @@ def pick_output(output_dict: Dict[str, np.ndarray], preferred_name: Optional[str
     if len(output_dict) == 1:
         return next(iter(output_dict.values()))
     for value in output_dict.values():
-        if isinstance(value, np.ndarray) and value.ndim >= 2:
+        if isinstance(value, np.ndarray) and value.ndim >= 3:
             return value
     raise RuntimeError(f"Cannot resolve output tensor. Keys: {list(output_dict.keys())}")
 
 
-def normalize_detections_shape(dets: np.ndarray) -> np.ndarray:
-    arr = np.asarray(dets)
-    if arr.ndim == 2:
-        arr = np.expand_dims(arr, axis=0)
-    if arr.ndim != 3 or arr.shape[-1] != 6:
-        raise RuntimeError(f"Unexpected detections shape: {arr.shape}")
-    return arr
+def normalize_prediction_shape(pred: np.ndarray) -> np.ndarray:
+    if pred.ndim != 3:
+        raise RuntimeError(f"Unexpected prediction rank: {pred.ndim}, shape={pred.shape}")
+    if pred.shape[1] in (84, 85):
+        return pred
+    if pred.shape[2] in (84, 85):
+        return pred.transpose(0, 2, 1)
+    raise RuntimeError(f"Unexpected prediction shape: {pred.shape}")
 
 
 def main() -> None:
@@ -199,19 +188,23 @@ def main() -> None:
     if not args.program_path.exists():
         raise FileNotFoundError(f"TPU program not found: {args.program_path}")
 
+    try:
+        import pytpu as tpu  # type: ignore
+        import torch
+        from ultralytics.utils.nms import non_max_suppression
+    except Exception as error:
+        raise RuntimeError("Missing dependencies: pytpu, torch, ultralytics") from error
+
     args.predictions_out.parent.mkdir(parents=True, exist_ok=True)
     args.summary_out.parent.mkdir(parents=True, exist_ok=True)
 
     coco = COCO(args.ann_file.as_posix())
-    valid_coco_ids = set(coco.getCatIds())
     img_ids = coco.getImgIds()
     if args.limit > 0:
         img_ids = img_ids[: args.limit]
 
-    preferred_input, preferred_output = load_io_names(args.build_summary, args.input_tensor_name, args.output_tensor_name)
+    preferred_input, preferred_output = load_io_names(args.build_summary, args.input_tensor_name, args.output_tensอร์_name)
     batch_size = infer_batch_size(args.program_path, args.build_summary, args.batch_size)
-
-    import pytpu as tpu  # type: ignore
 
     devices = tpu.Device.list_devices()
     if not devices:
@@ -226,12 +219,19 @@ def main() -> None:
         with tpu_device.load(args.program_path.as_posix()) as tpu_program:
             with tpu_program.inference() as inference:
                 probe_path = args.img_dir / coco.loadImgs(img_ids[0])[0]["file_name"]
-                probe_x_single, _ = preprocess(probe_path, width=args.width, height=args.height)
-                probe_x = make_batch([probe_x_single], batch_size)
+                probe_img = cv2.imread(probe_path.as_posix())
+                if probe_img is None:
+                    raise RuntimeError(f"Failed to read image: {probe_path}")
+                probe_lb, _, _, _ = letterbox(probe_img, args.img_size)
+                probe_x_single = np.expand_dims(
+                    probe_lb[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0,
+                    axis=0,
+                )
+                probe_x = make_batch([probe_x_single], batch_size).astype(np.float32)
                 runtime_hints = collect_runtime_input_hints(inference, tpu_program)
 
                 runtime_input_name, probe_out = resolve_runtime_input_name(inference, preferred_input, probe_x, runtime_hints)
-                _ = pick_output(probe_out, preferred_output)
+                _ = normalize_prediction_shape(np.asarray(pick_output(probe_out, preferred_output)))
 
                 num_batches = (len(img_ids) + batch_size - 1) // batch_size
                 processed_images = 0
@@ -241,40 +241,72 @@ def main() -> None:
                     end = min((batch_idx + 1) * batch_size, len(img_ids))
                     batch_ids = img_ids[start:end]
 
-                    tensors: List[np.ndarray] = []
-                    metas: List[Tuple[int, int, int]] = []
+                    batch_tensors: List[np.ndarray] = []
+                    metas: List[Dict[str, float]] = []
                     for img_id in batch_ids:
                         info = coco.loadImgs(img_id)[0]
-                        x, (orig_h, orig_w) = preprocess(args.img_dir / info["file_name"], width=args.width, height=args.height)
-                        tensors.append(x)
-                        metas.append((int(img_id), orig_h, orig_w))
+                        img = cv2.imread((args.img_dir / info["file_name"]).as_posix())
+                        if img is None:
+                            continue
+                        img_lb, scale, pad_x, pad_y = letterbox(img, args.img_size)
+                        x = img_lb[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
+                        batch_tensors.append(np.expand_dims(x, axis=0))
+                        metas.append(
+                            {
+                                "image_id": int(img_id),
+                                "img_h": int(img.shape[0]),
+                                "img_w": int(img.shape[1]),
+                                "scale": scale,
+                                "pad_x": pad_x,
+                                "pad_y": pad_y,
+                            }
+                        )
 
-                    x_batch = make_batch(tensors, batch_size)
+                    if not batch_tensors:
+                        continue
 
+                    x_batch = make_batch(batch_tensors, batch_size).astype(np.float32)
                     t0 = time.perf_counter()
                     out_dict = run_once(inference, runtime_input_name, x_batch)
                     t1 = time.perf_counter()
 
-                    dets = normalize_detections_shape(np.asarray(pick_output(out_dict, preferred_output)))[: len(metas)]
-                    for det, (img_id, orig_h, orig_w) in zip(dets, metas):
-                        sx = float(orig_w) / float(args.width)
-                        sy = float(orig_h) / float(args.height)
-                        for x1, y1, x2, y2, score, label in det:
-                            score = float(score)
-                            if score < args.conf_thres:
+                    pred = normalize_prediction_shape(np.asarray(pick_output(out_dict, preferred_output)))[: len(metas)]
+                    dets = non_max_suppression(
+                        torch.from_numpy(pred),
+                        conf_thres=args.conf_thres,
+                        iou_thres=args.iou_thres,
+                        max_det=args.max_det,
+                    )
+
+                    for det, meta in zip(dets, metas):
+                        if det is None or len(det) == 0:
+                            continue
+                        for x1, y1, x2, y2, conf, cls in det.cpu().numpy():
+                            cls_idx = int(cls)
+                            if cls_idx < 0 or cls_idx >= len(COCO80_TO_91):
                                 continue
-                            cat_id = int(round(float(label)))
-                            if cat_id not in valid_coco_ids:
-                                continue
-                            x1 = max(0.0, min(float(x1) * sx, orig_w - 1.0))
-                            y1 = max(0.0, min(float(y1) * sy, orig_h - 1.0))
-                            x2 = max(0.0, min(float(x2) * sx, orig_w - 1.0))
-                            y2 = max(0.0, min(float(y2) * sy, orig_h - 1.0))
+                            x1 = (x1 - meta["pad_x"]) / meta["scale"]
+                            y1 = (y1 - meta["pad_y"]) / meta["scale"]
+                            x2 = (x2 - meta["pad_x"]) / meta["scale"]
+                            y2 = (y2 - meta["pad_y"]) / meta["scale"]
+                            img_w = meta["img_w"]
+                            img_h = meta["img_h"]
+                            x1 = max(0.0, min(float(x1), img_w - 1.0))
+                            y1 = max(0.0, min(float(y1), img_h - 1.0))
+                            x2 = max(0.0, min(float(x2), img_w - 1.0))
+                            y2 = max(0.0, min(float(y2), img_h - 1.0))
                             width = x2 - x1
                             height = y2 - y1
                             if width <= 1.0 or height <= 1.0:
                                 continue
-                            results.append({"image_id": img_id, "category_id": cat_id, "bbox": [x1, y1, width, height], "score": score})
+                            results.append(
+                                {
+                                    "image_id": int(meta["image_id"]),
+                                    "category_id": COCO80_TO_91[cls_idx],
+                                    "bbox": [x1, y1, width, height],
+                                    "score": float(conf),
+                                }
+                            )
 
                     processed_images += len(metas)
                     if processed_images > args.warmup_images:
@@ -288,6 +320,7 @@ def main() -> None:
     summary = {
         "pipeline": "direct_tpu_detection",
         "program_path": args.program_path.as_posix(),
+        "build_summary": args.build_summary.as_posix(),
         "ann_file": args.ann_file.as_posix(),
         "img_dir": args.img_dir.as_posix(),
         "device": str(device_id),
@@ -301,7 +334,7 @@ def main() -> None:
         "predictions_file": args.predictions_out.as_posix(),
         "resolved_input_tensor": runtime_input_name,
         "preferred_output_tensor": preferred_output,
-        "input_size": [args.height, args.width],
+        "input_size": [args.img_size, args.img_size],
     }
     args.summary_out.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"Saved TPU predictions: {args.predictions_out}")

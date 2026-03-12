@@ -1,24 +1,18 @@
 # detection
 
-Рабочий контур детекции теперь один:
+Сейчас в репозитории есть один self-build маршрут для детекции:
 
-1. экспорт `RetinaNet ResNet50 FPN` из `torchvision` в `ONNX`
-2. `ONNX`-reference на COCO
+1. `YOLOv8s` из `ultralytics`
+
+Логика маршрута:
+
+1. экспорт в `ONNX`
+2. `ONNX` reference на COCO
 3. квантование и компиляция в свой `.tpu`
 4. direct TPU inference на COCO
 5. `mAP` через `COCOeval`
 
-Это именно self-build/reference-контур. `mlperf` для детекции сюда пока не включен.
-
-Используемые пути:
-
-- `data/evaluation/MSCOCO2017/val2017` - изображения для inference
-- `data/evaluation/MSCOCO2017/annotations/instances_val2017.json` - COCO annotations
-- `data/calibration/MSCOCO2017/val2017` - изображения для калибровки
-- `models/detection/retinanet_resnet50_fpn.onnx` - экспортированный ONNX
-- `models/detection/retinanet_resnet50_fpn.json` - metadata экспорта
-- `artifacts/detection/retinanet` - `.qm`, `.tpu` и build metadata
-- `experiments/detection/retinanet` - predictions, metrics и итоговая сводка
+`mlperf` для quality детекции сюда пока не включен.
 
 ## Что должно быть установлено отдельно
 
@@ -27,58 +21,43 @@
 - `tpu_compiler`
 - `torch`
 - `torchvision`
+- `ultralytics`
 
-## Один запуск под ключ
+## YOLOv8s
+
+Используемые пути:
+
+- `data/evaluation/MSCOCO2017/val2017`
+- `data/evaluation/MSCOCO2017/annotations/instances_val2017.json`
+- `data/calibration/MSCOCO2017/val2017`
+- `models/detection/yolov8s.onnx`
+- `artifacts/detection/yolov8s`
+- `experiments/detection/yolov8s`
+
+Один запуск под ключ:
 
 ```bash
-python /Users/user/tomsk/scr/detection/run_retinanet.py
+python /Users/user/tomsk/scr/detection/run_yolov8.py
 ```
 
-Что делает этот сценарий:
+Что делает сценарий:
 
-- при необходимости экспортирует `models/detection/retinanet_resnet50_fpn.onnx`
-- считает `ONNX`-reference на COCO
-- собирает `artifacts/detection/retinanet/retinanet_resnet50_fpn_b1.tpu` и `retinanet_resnet50_fpn_b8.tpu`
+- экспортирует `YOLOv8s` в `ONNX`
+- считает `ONNX` reference на COCO
+- собирает `yolov8s_b1.tpu` и `yolov8s_b8.tpu`
 - считает direct TPU качество на COCO
 - считает `COCO mAP` для `ONNX` и TPU predictions
 
 Итоговая сводка:
 
-- `experiments/detection/retinanet/results_summary.json`
+- `experiments/detection/yolov8s/results_summary.json`
 
-## Ручной порядок
-
-Экспортировать ONNX:
+Ручной порядок:
 
 ```bash
-python /Users/user/tomsk/scr/detection/export_retinanet_to_onnx.py
-```
-
-Собрать `.tpu`:
-
-```bash
-python /Users/user/tomsk/scr/detection/build_retinanet_program.py \
-  --model-path /Users/user/tomsk/models/detection/retinanet_resnet50_fpn.onnx
-```
-
-Считать `ONNX` reference:
-
-```bash
-python /Users/user/tomsk/scr/detection/run_retinanet_onnx.py \
-  --model-path /Users/user/tomsk/models/detection/retinanet_resnet50_fpn.onnx
-```
-
-Считать direct TPU inference:
-
-```bash
-python /Users/user/tomsk/scr/detection/run_retinanet_tpu.py \
-  --program-path /Users/user/tomsk/artifacts/detection/retinanet/retinanet_resnet50_fpn_b8.tpu \
-  --build-summary /Users/user/tomsk/artifacts/detection/retinanet/build_summary.json
-```
-
-Считать COCO metrics:
-
-```bash
-python /Users/user/tomsk/scr/detection/metrics.py \
-  --predictions /Users/user/tomsk/experiments/detection/retinanet/predictions_tpu.json
+python /Users/user/tomsk/scr/detection/export_yolov8s_to_onnx.py
+python /Users/user/tomsk/scr/detection/run_yolov8_onnx.py
+python /Users/user/tomsk/scr/detection/build_yolov8_program.py
+python /Users/user/tomsk/scr/detection/run_yolov8_tpu.py
+python /Users/user/tomsk/scr/detection/metrics.py
 ```

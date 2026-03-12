@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
@@ -9,22 +10,18 @@ import numpy as np
 import onnxruntime as ort
 from pycocotools.coco import COCO
 
+os.environ.setdefault("YOLO_AUTOINSTALL", "False")
+
+from coco_utils import COCO80_TO_91, letterbox
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run RetinaNet ONNX inference on COCO and save predictions")
-    parser.add_argument(
-        "--model-path",
-        type=Path,
-        default=REPO_ROOT / "models/detection/retinanet_resnet50_fpn.onnx",
-    )
-    parser.add_argument(
-        "--img-dir",
-        type=Path,
-        default=REPO_ROOT / "data/evaluation/MSCOCO2017/val2017",
-    )
+    parser = argparse.ArgumentParser(description="Run YOLOv8s ONNX inference on COCO and save predictions")
+    parser.add_argument("--model-path", type=Path, default=REPO_ROOT / "models/detection/yolov8s.onnx")
+    parser.add_argument("--img-dir", type=Path, default=REPO_ROOT / "data/evaluation/MSCOCO2017/val2017")
     parser.add_argument(
         "--ann-file",
         type=Path,
@@ -33,19 +30,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--predictions-out",
         type=Path,
-        default=REPO_ROOT / "experiments/detection/retinanet/predictions_onnx.json",
+        default=REPO_ROOT / "experiments/detection/yolov8s/predictions_onnx.json",
     )
     parser.add_argument(
         "--summary-out",
         type=Path,
-        default=REPO_ROOT / "experiments/detection/retinanet/onnx_summary.json",
+        default=REPO_ROOT / "experiments/detection/yolov8s/onnx_summary.json",
     )
-    parser.add_argument("--height", type=int, default=800)
-    parser.add_argument("--width", type=int, default=800)
+    parser.add_argument("--img-size", type=int, default=640)
     parser.add_argument("--conf-thres", type=float, default=0.001)
+    parser.add_argument("--iou-thres", type=float, default=0.65)
+    parser.add_argument("--max-det", type=int, default=300)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--warmup-images", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--providers", type=str, default=None)
     return parser.parse_args()
 
@@ -57,17 +55,17 @@ def resolve_providers(user_providers: Optional[str]) -> Sequence[str]:
         if not selected:
             raise RuntimeError(f"No requested providers available. available={available}")
         return selected
-    return [item for item in ["CoreMLExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"] if item in available]
+    return [item for item in ["CUDAExecutionProvider", "CPUExecutionProvider"] if item in available]
 
 
-def preprocess(path: Path, width: int, height: int) -> tuple[np.ndarray, tuple[int, int]]:
-    img = cv2.imread(path.as_posix())
-    if img is None:
-        raise RuntimeError(f"Failed to read image: {path}")
-    img_h, img_w = img.shape[:2]
-    img = cv2.resize(img, (width, height), interpolation=cv2.INTER_LINEAR)
-    x = img[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
-    return np.expand_dims(x, axis=0), (img_h, img_w)
+def normalize_prediction_shape(pred: np.ndarray) -> np.ndarray:
+    if pred.ndim != 3:
+        raise RuntimeError(f"Unexpected prediction rank: {pred.ndim}, shape={pred.shape}")
+    if pred.shape[1] in (84, 85):
+        return pred
+    if pred.shape[2] in (84, 85):
+        return pred.transpose(0, 2, 1)
+    raise RuntimeError(f"Unexpected prediction shape: {pred.shape}")
 
 
 def make_batch(tensors: List[np.ndarray], batch_size: int) -> np.ndarray:
@@ -80,25 +78,21 @@ def make_batch(tensors: List[np.ndarray], batch_size: int) -> np.ndarray:
     return np.concatenate([x, pad], axis=0)
 
 
-def normalize_detections_shape(dets: np.ndarray) -> np.ndarray:
-    arr = np.asarray(dets)
-    if arr.ndim == 2:
-        arr = np.expand_dims(arr, axis=0)
-    if arr.ndim != 3 or arr.shape[-1] != 6:
-        raise RuntimeError(f"Unexpected detections shape: {arr.shape}")
-    return arr
-
-
 def main() -> None:
     args = parse_args()
     if args.batch_size <= 0:
         raise RuntimeError("--batch-size must be > 0")
 
+    try:
+        import torch
+        from ultralytics.utils.nms import non_max_suppression
+    except Exception as error:
+        raise RuntimeError("Missing dependencies: torch, ultralytics") from error
+
     args.predictions_out.parent.mkdir(parents=True, exist_ok=True)
     args.summary_out.parent.mkdir(parents=True, exist_ok=True)
 
     coco = COCO(args.ann_file.as_posix())
-    valid_coco_ids = set(coco.getCatIds())
     img_ids = coco.getImgIds()
     if args.limit > 0:
         img_ids = img_ids[: args.limit]
@@ -106,11 +100,7 @@ def main() -> None:
     providers = resolve_providers(args.providers)
     session = ort.InferenceSession(args.model_path.as_posix(), providers=list(providers))
     active_providers = session.get_providers()
-
-    model_inputs = session.get_inputs()
-    if not model_inputs:
-        raise RuntimeError("ONNX model has no graph inputs in ORT session")
-    input_meta = model_inputs[0]
+    input_meta = session.get_inputs()[0]
     input_name = input_meta.name
     input_shape = list(input_meta.shape)
 
@@ -122,7 +112,6 @@ def main() -> None:
     results: List[Dict] = []
     infer_time = 0.0
     measured_images = 0
-
     num_batches = (len(img_ids) + effective_batch_size - 1) // effective_batch_size
     processed_images = 0
 
@@ -132,42 +121,72 @@ def main() -> None:
         batch_ids = img_ids[start:end]
 
         batch_tensors: List[np.ndarray] = []
-        metas: List[tuple[int, int, int]] = []
+        metas: List[Dict[str, float]] = []
         for img_id in batch_ids:
-            info = coco.loadImgs(img_id)[0]
-            x, (orig_h, orig_w) = preprocess(args.img_dir / info["file_name"], width=args.width, height=args.height)
-            batch_tensors.append(x)
-            metas.append((int(img_id), orig_h, orig_w))
+            img_info = coco.loadImgs(img_id)[0]
+            img = cv2.imread((args.img_dir / img_info["file_name"]).as_posix())
+            if img is None:
+                continue
+
+            img_lb, scale, pad_x, pad_y = letterbox(img, args.img_size)
+            x = img_lb[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
+            batch_tensors.append(np.expand_dims(x, axis=0))
+            metas.append(
+                {
+                    "image_id": int(img_id),
+                    "img_h": int(img.shape[0]),
+                    "img_w": int(img.shape[1]),
+                    "scale": scale,
+                    "pad_x": pad_x,
+                    "pad_y": pad_y,
+                }
+            )
 
         if not batch_tensors:
             continue
 
-        x_batch = make_batch(batch_tensors, effective_batch_size)
+        x_batch = make_batch(batch_tensors, effective_batch_size).astype(np.float32)
         t0 = time.perf_counter()
-        out = session.run(None, {input_name: x_batch})[0]
+        pred_raw = session.run(None, {input_name: x_batch})[0]
         t1 = time.perf_counter()
 
-        dets = normalize_detections_shape(out)[: len(metas)]
+        pred = normalize_prediction_shape(np.asarray(pred_raw))[: len(metas)]
+        dets = non_max_suppression(
+            torch.from_numpy(pred),
+            conf_thres=args.conf_thres,
+            iou_thres=args.iou_thres,
+            max_det=args.max_det,
+        )
 
-        for det, (img_id, orig_h, orig_w) in zip(dets, metas):
-            sx = float(orig_w) / float(args.width)
-            sy = float(orig_h) / float(args.height)
-            for x1, y1, x2, y2, score, label in det:
-                score = float(score)
-                if score < args.conf_thres:
+        for det, meta in zip(dets, metas):
+            if det is None or len(det) == 0:
+                continue
+            for x1, y1, x2, y2, conf, cls in det.cpu().numpy():
+                cls_idx = int(cls)
+                if cls_idx < 0 or cls_idx >= len(COCO80_TO_91):
                     continue
-                cat_id = int(round(float(label)))
-                if cat_id not in valid_coco_ids:
-                    continue
-                x1 = max(0.0, min(float(x1) * sx, orig_w - 1.0))
-                y1 = max(0.0, min(float(y1) * sy, orig_h - 1.0))
-                x2 = max(0.0, min(float(x2) * sx, orig_w - 1.0))
-                y2 = max(0.0, min(float(y2) * sy, orig_h - 1.0))
+                x1 = (x1 - meta["pad_x"]) / meta["scale"]
+                y1 = (y1 - meta["pad_y"]) / meta["scale"]
+                x2 = (x2 - meta["pad_x"]) / meta["scale"]
+                y2 = (y2 - meta["pad_y"]) / meta["scale"]
+                img_w = meta["img_w"]
+                img_h = meta["img_h"]
+                x1 = max(0.0, min(float(x1), img_w - 1.0))
+                y1 = max(0.0, min(float(y1), img_h - 1.0))
+                x2 = max(0.0, min(float(x2), img_w - 1.0))
+                y2 = max(0.0, min(float(y2), img_h - 1.0))
                 width = x2 - x1
                 height = y2 - y1
                 if width <= 1.0 or height <= 1.0:
                     continue
-                results.append({"image_id": img_id, "category_id": cat_id, "bbox": [x1, y1, width, height], "score": score})
+                results.append(
+                    {
+                        "image_id": int(meta["image_id"]),
+                        "category_id": COCO80_TO_91[cls_idx],
+                        "bbox": [x1, y1, width, height],
+                        "score": float(conf),
+                    }
+                )
 
         processed_images += len(metas)
         if processed_images > args.warmup_images:
@@ -188,7 +207,7 @@ def main() -> None:
         "measured_inference_sec": infer_time,
         "throughput_img_per_sec": measured_images / max(infer_time, 1e-9),
         "predictions_file": args.predictions_out.as_posix(),
-        "input_size": [args.height, args.width],
+        "input_size": [args.img_size, args.img_size],
     }
     args.summary_out.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"Saved ONNX predictions: {args.predictions_out}")

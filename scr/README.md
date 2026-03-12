@@ -12,12 +12,12 @@
   - `classification/run_resnet50_performance.py`
   - `classification/run_resnet50.py`
 - детекция:
-  - `detection/export_retinanet_to_onnx.py`
-  - `detection/build_retinanet_program.py`
-  - `detection/run_retinanet_onnx.py`
-  - `detection/run_retinanet_tpu.py`
+  - `detection/export_yolov8s_to_onnx.py`
+  - `detection/build_yolov8_program.py`
+  - `detection/run_yolov8_onnx.py`
+  - `detection/run_yolov8_tpu.py`
+  - `detection/run_yolov8.py`
   - `detection/metrics.py`
-  - `detection/run_retinanet.py`
 
 ## Данные
 
