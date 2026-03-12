@@ -67,6 +67,14 @@ python /Users/user/tomsk/scr/classification/run_resnet50_onnx_reference.py \
   --dataset-dir /Users/user/tomsk/data/evaluation/imagenet
 ```
 
+Reference-check для текущего `.tpu` без `mlperf`:
+
+```bash
+python /Users/user/tomsk/scr/classification/run_resnet50_tpu_reference.py \
+  --program-path /Users/user/tomsk/artifacts/classification/resnet50_b1.tpu \
+  --dataset-dir /Users/user/tomsk/data/evaluation/imagenet
+```
+
 Performance:
 
 ```bash
@@ -87,6 +95,7 @@ python /Users/user/tomsk/scr/classification/run_resnet50_performance.py \
 - Если рядом с `ONNX` лежит metadata JSON от старого экспорта, используй `--reexport-model` или другой `--model-path`.
 - Для обычного `resnet50` используется свой evaluator `evaluate_resnet50_accuracy.py`, а не vendor `accuracy-imagenet.py`.
 - `run_resnet50_onnx_reference.py` нужен только для диагностики: он прогоняет текущий `ONNX` на тех же данных и по тому же `val_map.txt`.
+- `run_resnet50_tpu_reference.py` нужен только для диагностики: он прогоняет текущий `.tpu` напрямую через `pytpu`, без `mlperf`.
 - `accuracy` по умолчанию использует весь `data/evaluation/imagenet/val_map.txt`.
 - Для быстрой проверки можно уменьшить выборку, например `--accuracy-samples 100` или `run_resnet50_accuracy.py --samples 100`.
 - `performance` следует ПМИ: запускается через `mlperf` и использует значения `qps` по умолчанию:
