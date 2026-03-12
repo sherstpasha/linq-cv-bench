@@ -281,7 +281,7 @@ def infer_desc_elements(desc: Dict[str, Any], dtype: np.dtype[np.generic]) -> in
 
 def build_aux_tensor(name: str, desc: Dict[str, Any], metas: List[Dict[str, float]], batch_size: int, img_size: int) -> np.ndarray:
     lower = name.lower()
-    is_shape = "shape" in lower or lower.startswith("input_1") or lower.endswith("input_1:0")
+    is_shape = "shape" in lower
     fallback_dtype = np.int32 if is_shape else np.float32
     dtype = infer_desc_dtype(desc, fallback_dtype)
     elem_count = infer_desc_elements(desc, dtype)
