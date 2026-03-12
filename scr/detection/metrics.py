@@ -1,5 +1,7 @@
 import argparse
+import contextlib
 import json
+import io
 from pathlib import Path
 
 from pycocotools.coco import COCO
@@ -40,6 +42,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "experiments/detection/metrics.json",
     )
+    parser.add_argument(
+        "--summary-text",
+        type=Path,
+        default=None,
+        help="Optional text file for COCOeval summarize() output. Defaults to output-json with .txt suffix.",
+    )
     parser.add_argument("--limit", type=int, default=0)
     return parser.parse_args()
 
@@ -47,6 +55,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
+    summary_text = args.summary_text or args.output_json.with_suffix(".txt")
+    summary_text.parent.mkdir(parents=True, exist_ok=True)
 
     coco = COCO(args.ann_file.as_posix())
     try:
@@ -66,7 +76,9 @@ def main() -> None:
             "note": "Predictions are empty; metrics were set to 0.0.",
         }
         args.output_json.write_text(json.dumps(result, indent=2), encoding="utf-8")
-        print(json.dumps(result, indent=2))
+        summary_text.write_text("Predictions are empty; metrics were set to 0.0.\n", encoding="utf-8")
+        print(f"Saved detection metrics: {args.output_json}")
+        print(f"Saved COCO summary text: {summary_text}")
         return
 
     dt = coco.loadRes(args.predictions.as_posix())
@@ -75,7 +87,10 @@ def main() -> None:
         ev.params.imgIds = coco.getImgIds()[: args.limit]
     ev.evaluate()
     ev.accumulate()
-    ev.summarize()
+    summary_buffer = io.StringIO()
+    with contextlib.redirect_stdout(summary_buffer):
+        ev.summarize()
+    summary_text.write_text(summary_buffer.getvalue(), encoding="utf-8")
 
     vals = [float(x) for x in ev.stats.tolist()]
     result = {
@@ -85,7 +100,8 @@ def main() -> None:
         "metrics": {key: value for key, value in zip(METRIC_KEYS, vals)},
     }
     args.output_json.write_text(json.dumps(result, indent=2), encoding="utf-8")
-    print(json.dumps(result, indent=2))
+    print(f"Saved detection metrics: {args.output_json}")
+    print(f"Saved COCO summary text: {summary_text}")
 
 
 if __name__ == "__main__":

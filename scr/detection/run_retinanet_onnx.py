@@ -191,7 +191,8 @@ def main() -> None:
         "input_size": [args.height, args.width],
     }
     args.summary_out.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print(json.dumps(summary, indent=2))
+    print(f"Saved ONNX predictions: {args.predictions_out}")
+    print(f"Saved ONNX summary: {args.summary_out}")
 
 
 if __name__ == "__main__":
