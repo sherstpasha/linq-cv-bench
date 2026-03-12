@@ -162,10 +162,13 @@ def make_batch(tensors: List[np.ndarray], batch_size: int) -> np.ndarray:
     return np.concatenate([x, pad], axis=0)
 
 
-def run_once(inference: object, input_name: str, x: np.ndarray) -> Dict[str, np.ndarray]:
+MISSING_INPUT_RE = re.compile(r'Missing required input tensor "([^"]+)"')
+
+
+def run_once(inference: object, feed_dict: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
     if hasattr(inference, "run"):
-        return inference.run({input_name: x})  # type: ignore[attr-defined]
-    return inference.sync({input_name: x})  # type: ignore[attr-defined]
+        return inference.run(feed_dict)  # type: ignore[attr-defined]
+    return inference.sync(feed_dict)  # type: ignore[attr-defined]
 
 
 def _as_name_list(obj: Any) -> List[str]:
@@ -176,6 +179,26 @@ def _as_name_list(obj: Any) -> List[str]:
     if isinstance(obj, (list, tuple, set)):
         return [str(x) for x in obj]
     return []
+
+
+def _normalize_desc_map(value: Any) -> Dict[str, Dict[str, Any]]:
+    result: Dict[str, Dict[str, Any]] = {}
+    if isinstance(value, dict):
+        for key, info in value.items():
+            if isinstance(info, dict):
+                result[str(key)] = dict(info)
+            else:
+                result[str(key)] = {"value": info}
+        return result
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("tensor_name") or item.get("id")
+                if name is not None:
+                    result[str(name)] = dict(item)
+            else:
+                result[str(item)] = {"value": item}
+    return result
 
 
 def collect_runtime_input_hints(inference: object, tpu_program: object) -> List[str]:
@@ -201,12 +224,98 @@ def collect_runtime_input_hints(inference: object, tpu_program: object) -> List[
     return uniq
 
 
+def collect_runtime_input_descs(inference: object, tpu_program: object) -> Dict[str, Dict[str, Any]]:
+    descs: Dict[str, Dict[str, Any]] = {}
+    for obj in (inference, tpu_program):
+        for name in ("tensor_descriptions", "get_tensor_descriptions", "inputs", "get_inputs"):
+            if not hasattr(obj, name):
+                continue
+            attr = getattr(obj, name)
+            try:
+                value = attr() if callable(attr) else attr
+            except Exception:
+                continue
+            descs.update(_normalize_desc_map(value))
+    return descs
+
+
+def infer_desc_dtype(desc: Dict[str, Any], fallback: np.dtype[np.generic]) -> np.dtype[np.generic]:
+    value = str(desc.get("data_type") or desc.get("dtype") or desc.get("type") or "").lower()
+    if "float16" in value:
+        return np.dtype(np.float16)
+    if "float32" in value or value == "float":
+        return np.dtype(np.float32)
+    if "float64" in value:
+        return np.dtype(np.float64)
+    if "int64" in value:
+        return np.dtype(np.int64)
+    if "int32" in value or value == "int":
+        return np.dtype(np.int32)
+    if "int16" in value:
+        return np.dtype(np.int16)
+    if "int8" in value:
+        return np.dtype(np.int8)
+    if "uint8" in value:
+        return np.dtype(np.uint8)
+    return fallback
+
+
+def infer_desc_elements(desc: Dict[str, Any], dtype: np.dtype[np.generic]) -> int:
+    for key in ("size", "data_size", "byte_size", "bytes"):
+        value = desc.get(key)
+        if isinstance(value, int) and value > 0:
+            if value % dtype.itemsize == 0:
+                return max(1, value // dtype.itemsize)
+            return max(1, value)
+    shape = desc.get("shape")
+    if isinstance(shape, (list, tuple)):
+        size = 1
+        for item in shape:
+            if isinstance(item, int) and item > 0:
+                size *= item
+            else:
+                return 0
+        return size
+    return 0
+
+
+def build_aux_tensor(name: str, desc: Dict[str, Any], metas: List[Dict[str, float]], batch_size: int, img_size: int) -> np.ndarray:
+    lower = name.lower()
+    is_shape = "shape" in lower or lower.startswith("input_1") or lower.endswith("input_1:0")
+    fallback_dtype = np.int32 if is_shape else np.float32
+    dtype = infer_desc_dtype(desc, fallback_dtype)
+    elem_count = infer_desc_elements(desc, dtype)
+    meta_rows = np.array([[m["img_h"], m["img_w"]] for m in metas], dtype=dtype)
+    if meta_rows.shape[0] < batch_size:
+        pad = np.repeat(meta_rows[-1:], repeats=batch_size - meta_rows.shape[0], axis=0)
+        meta_rows = np.concatenate([meta_rows, pad], axis=0)
+
+    if is_shape:
+        if elem_count in (0, 2):
+            return np.array([metas[0]["img_h"], metas[0]["img_w"]], dtype=dtype)
+        if elem_count == batch_size * 2:
+            return meta_rows.reshape(batch_size, 2).astype(dtype)
+        if elem_count == 1:
+            return np.array([img_size], dtype=dtype)
+        flat = np.zeros((elem_count,), dtype=dtype)
+        seed = meta_rows.reshape(-1)
+        flat[: min(elem_count, seed.size)] = seed[: min(elem_count, seed.size)]
+        return flat
+
+    if elem_count <= 0:
+        return np.zeros((1,), dtype=dtype)
+    return np.zeros((elem_count,), dtype=dtype)
+
+
 def resolve_runtime_input_name(
     inference: object,
     preferred_input: Optional[str],
     probe_x: np.ndarray,
     runtime_hints: List[str],
-) -> Tuple[str, Dict[str, np.ndarray]]:
+    input_descs: Dict[str, Dict[str, Any]],
+    metas: List[Dict[str, float]],
+    img_size: int,
+) -> Tuple[str, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     candidates = key_candidates(preferred_input) + runtime_hints
     tried = set()
     errors: Dict[str, str] = {}
@@ -214,13 +323,38 @@ def resolve_runtime_input_name(
         if name in tried:
             continue
         tried.add(name)
+        feed_dict: Dict[str, np.ndarray] = {name: probe_x}
         try:
-            out = run_once(inference, name, probe_x)
-            return name, out
+            while True:
+                out = run_once(inference, feed_dict)
+                return name, out, feed_dict
         except Exception as error:
-            errors[name] = str(error)
+            message = str(error)
+            missing_match = MISSING_INPUT_RE.search(message)
+            while missing_match:
+                missing_name = missing_match.group(1)
+                if missing_name in feed_dict:
+                    break
+                feed_dict[missing_name] = build_aux_tensor(
+                    missing_name,
+                    input_descs.get(missing_name, {}),
+                    metas,
+                    probe_x.shape[0],
+                    img_size,
+                )
+                try:
+                    out = run_once(inference, feed_dict)
+                    return name, out, feed_dict
+                except Exception as nested_error:
+                    message = str(nested_error)
+                    missing_match = MISSING_INPUT_RE.search(message)
+            errors[name] = message
     sample_errors = {k: errors[k] for k in sorted(errors)[:4]}
-    raise RuntimeError(f"Could not resolve input tensor name. Tried: {sorted(tried)}. Sample errors: {sample_errors}")
+    raise RuntimeError(
+        f"Could not resolve input tensor name. Tried: {sorted(tried)}. "
+        f"Known input descs: {sorted(input_descs.keys())}. "
+        f"Sample errors: {sample_errors}"
+    )
 
 
 def candidate_outputs(output_dict: Dict[str, np.ndarray], preferred_name: Optional[str]) -> List[Tuple[str, np.ndarray]]:
@@ -549,16 +683,33 @@ def main() -> None:
     decode_probe: Optional[Dict[str, Any]] = None
     resolved_input_name: Optional[str] = None
     probe_output_keys: Optional[List[str]] = None
+    runtime_input_descs: Dict[str, Dict[str, Any]] = {}
+    auxiliary_input_names: List[str] = []
 
     with tpu.Device.open(device_id) as tpu_device:
         with tpu_device.load(args.program_path.as_posix()) as tpu_program:
             with tpu_program.inference() as inference:
                 probe_img_info = coco.loadImgs(img_ids[0])[0]
-                probe_x_single, _ = preprocess_image(args.img_dir / probe_img_info["file_name"], args.img_size, args.input_layout, args.input_range)
+                probe_x_single, probe_meta = preprocess_image(
+                    args.img_dir / probe_img_info["file_name"],
+                    args.img_size,
+                    args.input_layout,
+                    args.input_range,
+                )
                 probe_x = make_batch([probe_x_single], batch_size)
                 runtime_hints = collect_runtime_input_hints(inference, tpu_program)
-                resolved_input_name, probe_out = resolve_runtime_input_name(inference, args.input_tensor_name, probe_x, runtime_hints)
+                runtime_input_descs = collect_runtime_input_descs(inference, tpu_program)
+                resolved_input_name, probe_out, probe_feed = resolve_runtime_input_name(
+                    inference,
+                    args.input_tensor_name,
+                    probe_x,
+                    runtime_hints,
+                    runtime_input_descs,
+                    [probe_meta],
+                    args.img_size,
+                )
                 probe_output_keys = list(probe_out.keys())
+                auxiliary_input_names = [name for name in probe_feed.keys() if name != resolved_input_name]
 
                 num_batches = (len(img_ids) + batch_size - 1) // batch_size
                 processed_images = 0
@@ -580,8 +731,17 @@ def main() -> None:
                         continue
 
                     x_batch = make_batch(batch_tensors, batch_size)
+                    feed_dict: Dict[str, np.ndarray] = {resolved_input_name: x_batch}
+                    for aux_name in auxiliary_input_names:
+                        feed_dict[aux_name] = build_aux_tensor(
+                            aux_name,
+                            runtime_input_descs.get(aux_name, {}),
+                            metas,
+                            batch_size,
+                            args.img_size,
+                        )
                     t0 = time.perf_counter()
-                    output_dict = run_once(inference, resolved_input_name, x_batch)
+                    output_dict = run_once(inference, feed_dict)
                     t1 = time.perf_counter()
                     batch_results, decode_probe = decode_predictions(
                         output_dict,
@@ -628,8 +788,10 @@ def main() -> None:
         "metrics_text": args.metrics_text.as_posix(),
         "metrics": metrics.get("metrics", {}),
         "resolved_input_name": resolved_input_name,
+        "auxiliary_input_names": auxiliary_input_names,
         "probe_output_keys": probe_output_keys,
         "decode_probe": decode_probe,
+        "runtime_input_desc_keys": sorted(runtime_input_descs.keys()),
     }
     args.summary_out.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"Saved tiny_yolo3 accuracy summary: {args.summary_out}")
