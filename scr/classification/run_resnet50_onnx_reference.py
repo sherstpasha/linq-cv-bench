@@ -116,6 +116,21 @@ def top5_indices(logits: np.ndarray) -> np.ndarray:
     return np.take_along_axis(top5, order, axis=1)
 
 
+def resolve_effective_batch_size(session: ort.InferenceSession, metadata: Dict, requested_batch_size: int) -> int:
+    input_meta = session.get_inputs()[0]
+    input_shape = list(input_meta.shape)
+    batch_dim = input_shape[0] if input_shape else None
+
+    if isinstance(batch_dim, int) and batch_dim > 0:
+        return batch_dim
+
+    metadata_batch = metadata.get("batch_size")
+    if isinstance(metadata_batch, int) and metadata_batch > 0:
+        return metadata_batch
+
+    return requested_batch_size
+
+
 def main() -> None:
     args = parse_args()
     if not args.model_path.exists():
@@ -140,6 +155,7 @@ def main() -> None:
     session = ort.InferenceSession(args.model_path.as_posix(), providers=providers)
     input_name = session.get_inputs()[0].name
     active_providers = session.get_providers()
+    effective_batch_size = resolve_effective_batch_size(session, metadata, args.batch_size)
 
     infer_time = 0.0
     measured_images = 0
@@ -148,8 +164,8 @@ def main() -> None:
     good_top5 = 0
 
     with args.predictions_out.open("w", encoding="utf-8") as out_file:
-        for batch_idx, start in enumerate(range(0, len(rows), args.batch_size)):
-            batch_rows = rows[start : start + args.batch_size]
+        for batch_idx, start in enumerate(range(0, len(rows), effective_batch_size)):
+            batch_rows = rows[start : start + effective_batch_size]
             batch_inputs = []
             batch_labels = []
             batch_names = []
@@ -190,7 +206,8 @@ def main() -> None:
         "val_map": val_map.as_posix(),
         "effective_samples": total,
         "providers": active_providers,
-        "batch_size": args.batch_size,
+        "batch_size": effective_batch_size,
+        "requested_batch_size": args.batch_size,
         "warmup_batches": args.warmup_batches,
         "measured_inference_sec": infer_time,
         "throughput_img_per_sec": measured_images / max(infer_time, 1e-9),
