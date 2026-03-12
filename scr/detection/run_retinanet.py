@@ -10,9 +10,23 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 THIS_DIR = Path(__file__).resolve().parent
 
 
-def run(cmd: List[str]) -> None:
-    print("$", " ".join(cmd))
-    subprocess.run(cmd, check=True)
+def run(cmd: List[str], stdout_path: Path, stderr_path: Path) -> Dict[str, str]:
+    stdout_path.parent.mkdir(parents=True, exist_ok=True)
+    stderr_path.parent.mkdir(parents=True, exist_ok=True)
+    print(f"Running: {' '.join(cmd)}")
+    print(f"  stdout: {stdout_path}")
+    print(f"  stderr: {stderr_path}")
+    with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
+        result = subprocess.run(cmd, stdout=stdout_file, stderr=stderr_file)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Command failed with exit code {result.returncode}. "
+            f"stdout: {stdout_path} stderr: {stderr_path}"
+        )
+    return {
+        "stdout": stdout_path.as_posix(),
+        "stderr": stderr_path.as_posix(),
+    }
 
 
 def load_json(path: Path) -> Dict:
@@ -82,8 +96,16 @@ def main() -> None:
 
     args.artifacts_dir.mkdir(parents=True, exist_ok=True)
     args.experiments_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir = args.experiments_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
     output_json = args.output_json or (args.experiments_dir / "results_summary.json")
     build_summary_path = args.artifacts_dir / "build_summary.json"
+    export_logs: Optional[Dict[str, str]] = None
+    onnx_infer_logs: Optional[Dict[str, str]] = None
+    onnx_metrics_logs: Optional[Dict[str, str]] = None
+    build_logs: Optional[Dict[str, str]] = None
+    tpu_infer_logs: Optional[Dict[str, str]] = None
+    tpu_metrics_logs: Optional[Dict[str, str]] = None
 
     export_cmd: Optional[List[str]] = None
     if args.reexport_model or not args.model_path.exists():
@@ -107,7 +129,11 @@ def main() -> None:
         ]
         if args.no_pretrained:
             export_cmd.append("--no-pretrained")
-        run(export_cmd)
+        export_logs = run(
+            export_cmd,
+            stdout_path=logs_dir / "export.stdout.log",
+            stderr_path=logs_dir / "export.stderr.log",
+        )
 
     onnx_infer_cmd: Optional[List[str]] = None
     onnx_metrics_cmd: Optional[List[str]] = None
@@ -139,7 +165,11 @@ def main() -> None:
             "--batch-size",
             str(args.batch_size),
         ]
-        run(onnx_infer_cmd)
+        onnx_infer_logs = run(
+            onnx_infer_cmd,
+            stdout_path=logs_dir / "onnx_infer.stdout.log",
+            stderr_path=logs_dir / "onnx_infer.stderr.log",
+        )
 
         onnx_metrics_cmd = [
             py,
@@ -153,7 +183,11 @@ def main() -> None:
             "--limit",
             str(args.limit),
         ]
-        run(onnx_metrics_cmd)
+        onnx_metrics_logs = run(
+            onnx_metrics_cmd,
+            stdout_path=logs_dir / "onnx_metrics.stdout.log",
+            stderr_path=logs_dir / "onnx_metrics.stderr.log",
+        )
 
     build_cmd: Optional[List[str]] = None
     if not args.skip_build:
@@ -180,7 +214,11 @@ def main() -> None:
             "1",
             str(args.batch_size),
         ]
-        run(build_cmd)
+        build_logs = run(
+            build_cmd,
+            stdout_path=logs_dir / "build.stdout.log",
+            stderr_path=logs_dir / "build.stderr.log",
+        )
 
     tpu_infer_cmd: Optional[List[str]] = None
     tpu_metrics_cmd: Optional[List[str]] = None
@@ -216,7 +254,11 @@ def main() -> None:
             "--batch-size",
             str(args.batch_size),
         ]
-        run(tpu_infer_cmd)
+        tpu_infer_logs = run(
+            tpu_infer_cmd,
+            stdout_path=logs_dir / "tpu_infer.stdout.log",
+            stderr_path=logs_dir / "tpu_infer.stderr.log",
+        )
 
         tpu_metrics_cmd = [
             py,
@@ -230,7 +272,11 @@ def main() -> None:
             "--limit",
             str(args.limit),
         ]
-        run(tpu_metrics_cmd)
+        tpu_metrics_logs = run(
+            tpu_metrics_cmd,
+            stdout_path=logs_dir / "tpu_metrics.stdout.log",
+            stderr_path=logs_dir / "tpu_metrics.stderr.log",
+        )
 
     summary = {
         "pipeline": "retinanet_detection",
@@ -244,21 +290,27 @@ def main() -> None:
         "export": {
             "command": export_cmd,
             "executed": export_cmd is not None,
+            "logs": export_logs,
             "metadata": load_json(args.model_path.with_suffix(".json")),
         },
         "onnx": {
             "inference_command": onnx_infer_cmd,
             "metrics_command": onnx_metrics_cmd,
+            "inference_logs": onnx_infer_logs,
+            "metrics_logs": onnx_metrics_logs,
             "summary": load_json(args.experiments_dir / "onnx_summary.json") if not args.skip_onnx else {"skipped": True},
             "metrics": load_json(args.experiments_dir / "metrics_onnx.json") if not args.skip_onnx else {"skipped": True},
         },
         "build": {
             "command": build_cmd,
+            "logs": build_logs,
             "summary": load_json(build_summary_path) if not args.skip_build else {"skipped": True},
         },
         "tpu": {
             "inference_command": tpu_infer_cmd,
             "metrics_command": tpu_metrics_cmd,
+            "inference_logs": tpu_infer_logs,
+            "metrics_logs": tpu_metrics_logs,
             "summary": load_json(args.experiments_dir / "tpu_summary.json") if not args.skip_tpu else {"skipped": True},
             "metrics": load_json(args.experiments_dir / "metrics_tpu.json") if not args.skip_tpu else {"skipped": True},
         },
