@@ -5,7 +5,7 @@
 - подготовка данных:
   - `download_data_from_yandex_disk.py`
   - `split_datasets_for_calibration.py`
-- классификация на `INT8/TPU`:
+- классификация:
   - `classification/export_resnet50_to_onnx.py`
   - `classification/build_resnet50_program.py`
   - `classification/run_resnet50_accuracy.py`
@@ -21,7 +21,7 @@ python /Users/user/tomsk/scr/split_datasets_for_calibration.py --force
 
 Используемые каталоги:
 
-- `data/evaluation/imagenet` - данные для `accuracy`
+- `data/evaluation/imagenet` - данные для accuracy
 - `data/calibration/imagenet` - данные для калибровки
 
 ## Классификация
@@ -35,6 +35,7 @@ python /Users/user/tomsk/scr/split_datasets_for_calibration.py --force
 В `requirements.txt` перечислены только Python-пакеты.
 Отдельно должны быть установлены:
 
+- `pytpu`
 - `tpu_framework`
 - `tpu_compiler`
 - `mlperf`

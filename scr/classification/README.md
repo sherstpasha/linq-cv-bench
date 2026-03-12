@@ -1,115 +1,93 @@
 # classification
 
-Классификационный сценарий построен вокруг своего `ResNet-50` и `INT8/TPU`.
+Рабочий контур классификации теперь один:
+
+1. экспорт `ResNet-50` из `torchvision` в `ONNX`
+2. квантование и компиляция в свой `.tpu`
+3. `accuracy` через собственный direct TPU runner
+4. `performance` через `mlperf` по `6.7`
 
 Используемые пути:
 
-- `data/evaluation/imagenet` - данные для `accuracy`
+- `data/evaluation/imagenet` - данные для accuracy
 - `data/calibration/imagenet` - данные для калибровки
-- `models/classification/resnet50.onnx` - исходная ONNX-модель
-- `models/classification/resnet50.json` - метаданные экспорта из `torchvision`
+- `models/classification/resnet50.onnx` - экспортированный ONNX
+- `models/classification/resnet50.json` - metadata экспорта
 - `artifacts/classification` - `.qm`, `.tpu`, build metadata
-- `experiments/classification` - логи запусков и итоговые JSON
+- `experiments/classification` - accuracy, performance и итоговая сводка
 
 ## Что должно быть установлено отдельно
 
 - `mlperf`
+- `pytpu`
 - `tpu_framework`
 - `tpu_compiler`
 - `torch`
 - `torchvision`
-- `onnxruntime`
 
-## Быстрый запуск
-
-```bash
-python /Users/user/tomsk/scr/classification/run_resnet50.py
-```
-
-Проверка на первых `100` изображениях:
+## Один запуск под ключ
 
 ```bash
 python /Users/user/tomsk/scr/classification/run_resnet50.py \
-  --accuracy-samples 100 \
-  --skip-performance
+  --mlperf-binary /path/to/mlperf
 ```
+
+Что делает этот сценарий:
+
+- при необходимости экспортирует `models/classification/resnet50.onnx`
+- собирает `artifacts/classification/resnet50_b1.tpu` и `resnet50_b8.tpu`
+- считает accuracy своим runner-ом на `batch 1`
+- считает performance через `mlperf`:
+  - `batch 1`, `q=500`, `3` прогона
+  - `batch 8`, `q=1000`, `3` прогона
+
+Итоговая сводка:
+
+- `experiments/classification/results_summary.json`
 
 ## Ручной порядок
 
-Экспортировать ONNX из `torchvision`:
+Экспортировать ONNX:
 
 ```bash
 python /Users/user/tomsk/scr/classification/export_resnet50_to_onnx.py
 ```
 
-Экспорт по умолчанию уже делает рабочий контракт `NHWC + uint8 + internal normalization`.
-Калибровка для `INT8` фиксирована и всегда использует стандартный `ImageNet normalized` preprocess.
-
-Сборка артефактов:
+Собрать `.tpu`:
 
 ```bash
 python /Users/user/tomsk/scr/classification/build_resnet50_program.py \
   --model-path /Users/user/tomsk/models/classification/resnet50.onnx
 ```
 
-Accuracy:
+Считать accuracy своим runner-ом:
 
 ```bash
 python /Users/user/tomsk/scr/classification/run_resnet50_accuracy.py \
-  --program-path /Users/user/tomsk/artifacts/classification/resnet50_b1.tpu
-```
-
-Reference-check для текущего `ONNX` без `mlperf` и без `TPU`:
-
-```bash
-python /Users/user/tomsk/scr/classification/run_resnet50_onnx_reference.py \
-  --model-path /Users/user/tomsk/models/classification/resnet50.onnx \
-  --dataset-dir /Users/user/tomsk/data/evaluation/imagenet
-```
-
-Reference-check для текущего `.tpu` без `mlperf`:
-
-```bash
-python /Users/user/tomsk/scr/classification/run_resnet50_tpu_reference.py \
   --program-path /Users/user/tomsk/artifacts/classification/resnet50_b1.tpu \
+  --build-summary /Users/user/tomsk/artifacts/classification/build_summary.json \
   --dataset-dir /Users/user/tomsk/data/evaluation/imagenet
 ```
 
-Запуск vendor `resnet50_mlperf` строго по ПМИ:
-
-```bash
-python /Users/user/tomsk/scr/classification/run_vendor_resnet50_mlperf.py \
-  --mlperf-binary /path/to/mlperf \
-  --program-b1 /path/to/resnet50_mlperf_b1_*.tpu \
-  --program-b8 /path/to/resnet50_mlperf_b8_*.tpu \
-  --dataset-dir /Users/user/tomsk/data/evaluation/imagenet
-```
-
-Performance:
+Считать performance через `mlperf`:
 
 ```bash
 python /Users/user/tomsk/scr/classification/run_resnet50_performance.py \
+  --mlperf-binary /path/to/mlperf \
   --batch-size 1
 
 python /Users/user/tomsk/scr/classification/run_resnet50_performance.py \
+  --mlperf-binary /path/to/mlperf \
   --batch-size 8
 ```
 
 ## Замечания
 
-- Если `models/classification/resnet50.onnx` отсутствует, orchestrator сам экспортирует его из `torchvision`.
-- По умолчанию экспорт идет с `opset 13`, потому что он безопаснее для vendor-конвертера, чем более новые версии.
-- При первом экспорте pretrained-весов `torchvision` нужен доступ в интернет.
-- По умолчанию экспортируется модель с рабочим контрактом `NHWC + uint8 + internal normalization`.
-- Калибровка в build-контуре фиксирована: resize -> center crop -> `ImageNet mean/std` normalization.
-- Если рядом с `ONNX` лежит metadata JSON от старого экспорта, используй `--reexport-model` или другой `--model-path`.
-- Для обычного `resnet50` используется свой evaluator `evaluate_resnet50_accuracy.py`, а не vendor `accuracy-imagenet.py`.
-- `run_resnet50_onnx_reference.py` нужен только для диагностики: он прогоняет текущий `ONNX` на тех же данных и по тому же `val_map.txt`.
-- `run_resnet50_tpu_reference.py` нужен только для диагностики: он прогоняет текущий `.tpu` напрямую через `pytpu`, без `mlperf`.
-- `run_vendor_resnet50_mlperf.py` нужен для формального прогона vendor `resnet50_mlperf` по ПМИ: `accuracy` на `1000`, `performance` по `3` повтора для `b1` и `b8`.
-- `accuracy` по умолчанию использует весь `data/evaluation/imagenet/val_map.txt`.
-- Для быстрой проверки можно уменьшить выборку, например `--accuracy-samples 100` или `run_resnet50_accuracy.py --samples 100`.
-- `performance` следует ПМИ: запускается через `mlperf` и использует значения `qps` по умолчанию:
-  - `500` для `batch 1`
-  - `1000` для `batch 8`
-- Итоговая сводка сохраняется в `experiments/classification/results_summary.json`.
+- экспорт по умолчанию фиксирован: `NHWC + uint8 + internal normalization`
+- калибровка фиксирована: `resize -> center crop -> ImageNet mean/std`
+- `run_resnet50_accuracy.py` - это собственный direct TPU/evaluator слой, от которого дальше можно строить другие задачи
+- `run_resnet50_performance.py` следует `6.7`:
+  - `batch 1 -> q=500`
+  - `batch 8 -> q=1000`
+  - `3` прогона и среднее по `VALID`
+- по умолчанию accuracy идет на весь `val_map.txt`; для быстрой проверки можно дать `--accuracy-samples 100` в `run_resnet50.py` или `--samples 100` в `run_resnet50_accuracy.py`
