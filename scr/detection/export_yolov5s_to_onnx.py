@@ -2,6 +2,7 @@ import argparse
 import json
 import shutil
 import subprocess
+import sys
 import urllib.request
 from pathlib import Path
 from typing import Optional
@@ -35,7 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--opset", type=int, default=13)
     parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--python", type=str, default="python")
+    parser.add_argument("--python", type=str, default=sys.executable)
     parser.add_argument("--clone-if-missing", action="store_true")
     parser.add_argument("--install-requirements", action="store_true")
     parser.add_argument("--skip-download-weights", action="store_true")
@@ -77,6 +78,16 @@ def main() -> None:
     ensure_weights(args.weights, args.weights_url, args.skip_download_weights)
 
     if args.install_requirements:
+        run(
+            [
+                args.python,
+                "-m",
+                "pip",
+                "install",
+                "setuptools",
+                "wheel",
+            ]
+        )
         run(
             [
                 args.python,

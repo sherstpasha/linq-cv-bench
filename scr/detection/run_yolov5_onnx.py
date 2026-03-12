@@ -78,6 +78,8 @@ def main() -> None:
         export_cmd = [
             py,
             (THIS_DIR / "export_yolov5s_to_onnx.py").as_posix(),
+            "--python",
+            py,
             "--repo-dir",
             args.repo_dir.as_posix(),
             "--repo-ref",
