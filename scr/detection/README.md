@@ -1,74 +1,84 @@
 # detection
 
-Стартовый контур для детекции сейчас один:
+Рабочий контур детекции теперь один:
 
-1. скачать `SSD-MobileNetV1` из `ONNX Model Zoo`
-2. привести вход к статическому `1x300x300x3`
-3. квантизовать и собрать свой `.tpu`
-4. прогнать direct TPU inference на фрагменте COCO
+1. экспорт `RetinaNet ResNet50 FPN` из `torchvision` в `ONNX`
+2. `ONNX`-reference на COCO
+3. квантование и компиляция в свой `.tpu`
+4. direct TPU inference на COCO
+5. `mAP` через `COCOeval`
+
+Это именно self-build/reference-контур. `mlperf` для детекции сюда пока не включен.
 
 Используемые пути:
 
-- `data/evaluation/MSCOCO2017/val2017` - изображения для запуска
+- `data/evaluation/MSCOCO2017/val2017` - изображения для inference
 - `data/evaluation/MSCOCO2017/annotations/instances_val2017.json` - COCO annotations
 - `data/calibration/MSCOCO2017/val2017` - изображения для калибровки
-- `models/detection/ssd_mobilenet_v1_10.onnx` - исходный ONNX
-- `artifacts/detection/ssd_mobilenet_v1` - `.qm`, `.tpu`, static ONNX и build metadata
-- `experiments/detection/ssd_mobilenet_v1` - predictions и итоговая сводка запуска
+- `models/detection/retinanet_resnet50_fpn.onnx` - экспортированный ONNX
+- `models/detection/retinanet_resnet50_fpn.json` - metadata экспорта
+- `artifacts/detection/retinanet` - `.qm`, `.tpu` и build metadata
+- `experiments/detection/retinanet` - predictions, metrics и итоговая сводка
 
 ## Что должно быть установлено отдельно
 
 - `pytpu`
 - `tpu_framework`
 - `tpu_compiler`
+- `torch`
+- `torchvision`
 
 ## Один запуск под ключ
 
 ```bash
-python /Users/user/tomsk/scr/detection/run_ssd_mobilenet_v1.py
+python /Users/user/tomsk/scr/detection/run_retinanet.py
 ```
 
-По умолчанию этот сценарий:
+Что делает этот сценарий:
 
-- скачивает `SSD-MobileNetV1` из `ONNX Model Zoo`, если файла нет
-- собирает `ssd_mobilenet_v1_b1.tpu` и `ssd_mobilenet_v1_b8.tpu`
-- запускает direct TPU inference на первых `100` изображениях COCO
-- сохраняет predictions в COCO JSON
+- при необходимости экспортирует `models/detection/retinanet_resnet50_fpn.onnx`
+- считает `ONNX`-reference на COCO
+- собирает `artifacts/detection/retinanet/retinanet_resnet50_fpn_b1.tpu` и `retinanet_resnet50_fpn_b8.tpu`
+- считает direct TPU качество на COCO
+- считает `COCO mAP` для `ONNX` и TPU predictions
 
 Итоговая сводка:
 
-- `experiments/detection/ssd_mobilenet_v1/results_summary.json`
+- `experiments/detection/retinanet/results_summary.json`
 
 ## Ручной порядок
 
-Скачать ONNX:
+Экспортировать ONNX:
 
 ```bash
-python /Users/user/tomsk/scr/detection/download_ssd_mobilenet_v1_model.py
+python /Users/user/tomsk/scr/detection/export_retinanet_to_onnx.py
 ```
 
 Собрать `.tpu`:
 
 ```bash
-python /Users/user/tomsk/scr/detection/build_ssd_mobilenet_v1_program.py \
-  --model-path /Users/user/tomsk/models/detection/ssd_mobilenet_v1_10.onnx
+python /Users/user/tomsk/scr/detection/build_retinanet_program.py \
+  --model-path /Users/user/tomsk/models/detection/retinanet_resnet50_fpn.onnx
 ```
 
-Прогнать direct TPU inference:
+Считать `ONNX` reference:
 
 ```bash
-python /Users/user/tomsk/scr/detection/run_ssd_mobilenet_v1_tpu.py \
-  --program-path /Users/user/tomsk/artifacts/detection/ssd_mobilenet_v1/ssd_mobilenet_v1_b1.tpu \
-  --build-summary /Users/user/tomsk/artifacts/detection/ssd_mobilenet_v1/build_summary.json \
-  --img-dir /Users/user/tomsk/data/evaluation/MSCOCO2017/val2017 \
-  --ann-file /Users/user/tomsk/data/evaluation/MSCOCO2017/annotations/instances_val2017.json
+python /Users/user/tomsk/scr/detection/run_retinanet_onnx.py \
+  --model-path /Users/user/tomsk/models/detection/retinanet_resnet50_fpn.onnx
 ```
 
-## Замечания
+Считать direct TPU inference:
 
-- модель берется из официального `ONNX Model Zoo`
-- текущий шаг закрывает только:
-  - download
-  - build
-  - direct TPU run
-- `mlperf` и COCO-mAP поверх predictions добавим отдельно, когда подтвердим, что `.tpu` запускается стабильно
+```bash
+python /Users/user/tomsk/scr/detection/run_retinanet_tpu.py \
+  --program-path /Users/user/tomsk/artifacts/detection/retinanet/retinanet_resnet50_fpn_b8.tpu \
+  --build-summary /Users/user/tomsk/artifacts/detection/retinanet/build_summary.json
+```
+
+Считать COCO metrics:
+
+```bash
+python /Users/user/tomsk/scr/detection/metrics.py \
+  --predictions /Users/user/tomsk/experiments/detection/retinanet/predictions_tpu.json
+```

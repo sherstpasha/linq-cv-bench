@@ -12,10 +12,12 @@
   - `classification/run_resnet50_performance.py`
   - `classification/run_resnet50.py`
 - детекция:
-  - `detection/download_ssd_mobilenet_v1_model.py`
-  - `detection/build_ssd_mobilenet_v1_program.py`
-  - `detection/run_ssd_mobilenet_v1_tpu.py`
-  - `detection/run_ssd_mobilenet_v1.py`
+  - `detection/export_retinanet_to_onnx.py`
+  - `detection/build_retinanet_program.py`
+  - `detection/run_retinanet_onnx.py`
+  - `detection/run_retinanet_tpu.py`
+  - `detection/metrics.py`
+  - `detection/run_retinanet.py`
 
 ## Данные
 
@@ -34,6 +36,11 @@ python /Users/user/tomsk/scr/split_datasets_for_calibration.py --force
 Подробный порядок запуска описан в:
 
 - `scr/classification/README.md`
+
+## Детекция
+
+Подробный порядок запуска описан в:
+
 - `scr/detection/README.md`
 
 ## Внешние зависимости
