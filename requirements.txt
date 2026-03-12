@@ -1,6 +1,10 @@
 numpy
 onnx
+onnxruntime
+opencv-python
 Pillow
+pycocotools
 tensorflow
 torch
 torchvision
+tqdm
