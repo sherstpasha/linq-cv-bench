@@ -10,6 +10,17 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 THIS_DIR = Path(__file__).resolve().parent
 
 
+def tail_text(path: Path, line_count: int = 60) -> str:
+    if not path.exists():
+        return ""
+    try:
+        text = path.read_bytes().decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+    lines = text.splitlines()
+    return "\n".join(lines[-line_count:])
+
+
 def run(cmd: List[str], stdout_path: Path, stderr_path: Path) -> Dict[str, str]:
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
     stderr_path.parent.mkdir(parents=True, exist_ok=True)
@@ -19,9 +30,18 @@ def run(cmd: List[str], stdout_path: Path, stderr_path: Path) -> Dict[str, str]:
     with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
         result = subprocess.run(cmd, stdout=stdout_file, stderr=stderr_file)
     if result.returncode != 0:
-        raise RuntimeError(
+        stderr_tail = tail_text(stderr_path)
+        stdout_tail = tail_text(stdout_path, line_count=20)
+        message = (
             f"Command failed with exit code {result.returncode}. "
             f"stdout: {stdout_path} stderr: {stderr_path}"
+        )
+        if stderr_tail:
+            message += f"\n--- stderr tail ---\n{stderr_tail}"
+        if stdout_tail:
+            message += f"\n--- stdout tail ---\n{stdout_tail}"
+        raise RuntimeError(
+            message
         )
     return {
         "stdout": stdout_path.as_posix(),
