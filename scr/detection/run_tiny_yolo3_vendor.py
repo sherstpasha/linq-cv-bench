@@ -8,6 +8,16 @@ from typing import Dict, List
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 THIS_DIR = Path(__file__).resolve().parent
+DEFAULT_PROGRAM_PATH = Path("linq_files/tpu_programs/tiny_yolo3_b8_o5_128x128_asic.tpu")
+DEFAULT_INPUT_TENSOR_NAME = "input_1:0"
+DEFAULT_IMG_SIZE = 416
+DEFAULT_INPUT_LAYOUT = "nhwc"
+DEFAULT_INPUT_RANGE = "unit_float"
+DEFAULT_CONF_THRES = 0.001
+DEFAULT_IOU_THRES = 0.45
+DEFAULT_MAX_DET = 300
+DEFAULT_BATCH_SIZE = 8
+DEFAULT_LIMIT = 5000
 
 
 def tail_text(path: Path, line_count: int = 80) -> str:
@@ -53,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--program-path",
         type=Path,
-        default=Path("linq_files/tpu_programs/tiny_yolo3_b8_o5_128x128_asic.tpu"),
+        default=DEFAULT_PROGRAM_PATH,
     )
     parser.add_argument("--img-dir", type=Path, default=REPO_ROOT / "data/evaluation/MSCOCO2017/val2017")
     parser.add_argument(
@@ -66,17 +76,17 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "experiments/detection/tiny_yolo3_vendor",
     )
-    parser.add_argument("--img-size", type=int, default=416)
-    parser.add_argument("--input-layout", choices=["nchw", "nhwc"], default="nhwc")
-    parser.add_argument("--input-range", choices=["unit_float", "uint8"], default="unit_float")
-    parser.add_argument("--conf-thres", type=float, default=0.001)
-    parser.add_argument("--iou-thres", type=float, default=0.45)
-    parser.add_argument("--max-det", type=int, default=300)
-    parser.add_argument("--limit", type=int, default=100)
-    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--img-size", type=int, default=DEFAULT_IMG_SIZE)
+    parser.add_argument("--input-layout", choices=["nchw", "nhwc"], default=DEFAULT_INPUT_LAYOUT)
+    parser.add_argument("--input-range", choices=["unit_float", "uint8"], default=DEFAULT_INPUT_RANGE)
+    parser.add_argument("--conf-thres", type=float, default=DEFAULT_CONF_THRES)
+    parser.add_argument("--iou-thres", type=float, default=DEFAULT_IOU_THRES)
+    parser.add_argument("--max-det", type=int, default=DEFAULT_MAX_DET)
+    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--qps", type=int, default=400)
     parser.add_argument("--runs", type=int, default=3)
-    parser.add_argument("--input-tensor-name", type=str, default="input_1:0")
+    parser.add_argument("--input-tensor-name", type=str, default=DEFAULT_INPUT_TENSOR_NAME)
     parser.add_argument("--output-tensor-name", type=str, default=None)
     parser.add_argument("--skip-accuracy", action="store_true")
     parser.add_argument("--skip-performance", action="store_true")

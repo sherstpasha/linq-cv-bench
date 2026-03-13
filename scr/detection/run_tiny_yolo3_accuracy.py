@@ -16,8 +16,16 @@ from coco_utils import COCO80_TO_91, letterbox
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BATCH_RE = re.compile(r"_b(\d+)")
-DEFAULT_ANCHORS = [(10, 14), (23, 27), (37, 58), (81, 82), (135, 169), (344, 319)]
-DEFAULT_MASKS = [(3, 4, 5), (0, 1, 2)]
+DEFAULT_PROGRAM_PATH = Path("linq_files/tpu_programs/tiny_yolo3_b8_o5_128x128_asic.tpu")
+DEFAULT_INPUT_TENSOR_NAME = "input_1:0"
+DEFAULT_IMG_SIZE = 416
+DEFAULT_INPUT_LAYOUT = "nhwc"
+DEFAULT_INPUT_RANGE = "unit_float"
+DEFAULT_CONF_THRES = 0.001
+DEFAULT_IOU_THRES = 0.45
+DEFAULT_MAX_DET = 300
+DEFAULT_BATCH_SIZE = 8
+DEFAULT_LIMIT = 5000
 
 
 def parse_args() -> argparse.Namespace:
@@ -25,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--program-path",
         type=Path,
-        default=Path("linq_files/tpu_programs/tiny_yolo3_b8_o5_128x128_asic.tpu"),
+        default=DEFAULT_PROGRAM_PATH,
     )
     parser.add_argument(
         "--img-dir",
@@ -57,17 +65,17 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "experiments/detection/tiny_yolo3_vendor/metrics.txt",
     )
-    parser.add_argument("--input-tensor-name", type=str, default="input_1:0")
+    parser.add_argument("--input-tensor-name", type=str, default=DEFAULT_INPUT_TENSOR_NAME)
     parser.add_argument("--output-tensor-name", type=str, default=None)
-    parser.add_argument("--img-size", type=int, default=416)
-    parser.add_argument("--input-layout", choices=["nchw", "nhwc"], default="nhwc")
-    parser.add_argument("--input-range", choices=["unit_float", "uint8"], default="unit_float")
-    parser.add_argument("--conf-thres", type=float, default=0.001)
-    parser.add_argument("--iou-thres", type=float, default=0.45)
-    parser.add_argument("--max-det", type=int, default=300)
-    parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument("--img-size", type=int, default=DEFAULT_IMG_SIZE)
+    parser.add_argument("--input-layout", choices=["nchw", "nhwc"], default=DEFAULT_INPUT_LAYOUT)
+    parser.add_argument("--input-range", choices=["unit_float", "uint8"], default=DEFAULT_INPUT_RANGE)
+    parser.add_argument("--conf-thres", type=float, default=DEFAULT_CONF_THRES)
+    parser.add_argument("--iou-thres", type=float, default=DEFAULT_IOU_THRES)
+    parser.add_argument("--max-det", type=int, default=DEFAULT_MAX_DET)
+    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
     parser.add_argument("--warmup-images", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=0)
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--num-classes", type=int, default=80)
     parser.add_argument(
@@ -224,6 +232,25 @@ def collect_runtime_input_hints(inference: object, tpu_program: object) -> List[
     return uniq
 
 
+def build_input_candidates(
+    preferred_input: Optional[str],
+    runtime_hints: List[str],
+    input_descs: Dict[str, Dict[str, Any]],
+) -> List[str]:
+    candidates: List[str] = []
+    candidates.extend(key_candidates(preferred_input))
+    candidates.extend(sorted(input_descs.keys()))
+    candidates.extend(runtime_hints)
+
+    uniq: List[str] = []
+    seen = set()
+    for item in candidates:
+        if item and item not in seen:
+            seen.add(item)
+            uniq.append(item)
+    return uniq
+
+
 def collect_runtime_input_descs(inference: object, tpu_program: object) -> Dict[str, Dict[str, Any]]:
     descs: Dict[str, Dict[str, Any]] = {}
     for obj in (inference, tpu_program):
@@ -316,7 +343,7 @@ def resolve_runtime_input_name(
     metas: List[Dict[str, float]],
     img_size: int,
 ) -> Tuple[str, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
-    candidates = key_candidates(preferred_input) + runtime_hints
+    candidates = build_input_candidates(preferred_input, runtime_hints, input_descs)
     tried = set()
     errors: Dict[str, str] = {}
     for name in candidates:
