@@ -25,6 +25,7 @@
   - `segmentation/export_fcn_resnet50_to_onnx.py`
   - `segmentation/build_fcn_resnet50_program.py`
   - `segmentation/run_fcn_resnet50_accuracy.py`
+  - `segmentation/run_fcn_resnet50_performance.py`
   - `segmentation/run_fcn_resnet50.py`
 
 ## Данные

@@ -12,7 +12,7 @@ THIS_DIR = Path(__file__).resolve().parent
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Export FCN-ResNet50 to ONNX, build TPU program, and run direct TPU accuracy"
+        description="Export FCN-ResNet50 to ONNX, build TPU program, run direct TPU accuracy, and run MLPerf performance"
     )
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
     parser.add_argument(
@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--compile-preset", type=str, default="O1", choices=["O1", "O5", "DEFAULT"])
     parser.add_argument("--height", type=int, default=520)
     parser.add_argument("--width", type=int, default=520)
-    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--accuracy-batch-size", type=int, default=1)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--warmup-images", type=int, default=5)
     parser.add_argument("--num-classes", type=int, default=21)
@@ -58,6 +58,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reexport-model", action="store_true")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-accuracy", action="store_true")
+    parser.add_argument("--skip-performance", action="store_true")
+    parser.add_argument("--mlperf-binary", type=str, default="mlperf")
     parser.add_argument("--output-json", type=Path, default=None)
     return parser.parse_args()
 
@@ -82,6 +84,7 @@ def main() -> None:
     output_json = args.output_json or (args.experiments_dir / "results_summary.json")
     build_summary_path = args.artifacts_dir / "build_summary.json"
     accuracy_summary_path = args.experiments_dir / "accuracy" / "summary.json"
+    performance_dir = args.experiments_dir / "performance"
 
     export_cmd: Optional[List[str]] = None
     if args.reexport_model or not args.model_path.exists():
@@ -131,7 +134,8 @@ def main() -> None:
             "--compile-preset",
             args.compile_preset,
             "--batch-sizes",
-            str(args.batch_size),
+            "1",
+            "8",
         ]
         run(build_cmd)
 
@@ -141,7 +145,7 @@ def main() -> None:
             py,
             (THIS_DIR / "run_fcn_resnet50_accuracy.py").as_posix(),
             "--program-path",
-            (args.artifacts_dir / f"{args.model_name}_b{args.batch_size}.tpu").as_posix(),
+            (args.artifacts_dir / f"{args.model_name}_b{args.accuracy_batch_size}.tpu").as_posix(),
             "--voc-root",
             args.voc_root.as_posix(),
             "--predictions-dir",
@@ -149,7 +153,7 @@ def main() -> None:
             "--summary-out",
             accuracy_summary_path.as_posix(),
             "--batch-size",
-            str(args.batch_size),
+            str(args.accuracy_batch_size),
             "--warmup-images",
             str(args.warmup_images),
             "--height",
@@ -165,12 +169,35 @@ def main() -> None:
             accuracy_cmd += ["--limit", str(args.limit)]
         run(accuracy_cmd)
 
+    performance_cmds: List[List[str]] = []
+    if not args.skip_performance:
+        for batch_size in (1, 8):
+            cmd = [
+                py,
+                (THIS_DIR / "run_fcn_resnet50_performance.py").as_posix(),
+                "--mlperf-binary",
+                args.mlperf_binary,
+                "--artifacts-dir",
+                args.artifacts_dir.as_posix(),
+                "--model-name",
+                args.model_name,
+                "--batch-size",
+                str(batch_size),
+                "--runs",
+                "3",
+                "--output-dir",
+                performance_dir.as_posix(),
+            ]
+            run(cmd)
+            performance_cmds.append(cmd)
+
     summary = {
         "pipeline": "fcn_resnet50_segmentation",
         "model_name": args.model_name,
         "model_path": args.model_path.as_posix(),
         "calibration_dir": args.calibration_dir.as_posix(),
         "voc_root": args.voc_root.as_posix(),
+        "mlperf_binary": args.mlperf_binary,
         "artifacts_dir": args.artifacts_dir.as_posix(),
         "experiments_dir": args.experiments_dir.as_posix(),
         "model_export": {
@@ -184,6 +211,15 @@ def main() -> None:
         "accuracy": {
             "command": accuracy_cmd,
             "summary": load_json(accuracy_summary_path) if not args.skip_accuracy else {"skipped": True},
+        },
+        "performance": {
+            "commands": performance_cmds,
+            "b1": load_json(performance_dir / "b1" / "summary.json")
+            if not args.skip_performance
+            else {"skipped": True},
+            "b8": load_json(performance_dir / "b8" / "summary.json")
+            if not args.skip_performance
+            else {"skipped": True},
         },
     }
     output_json.write_text(json.dumps(summary, indent=2), encoding="utf-8")

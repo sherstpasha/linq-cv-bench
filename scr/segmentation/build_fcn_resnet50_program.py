@@ -43,7 +43,7 @@ def parse_args() -> argparse.Namespace:
         default="O1",
         choices=["O1", "O5", "DEFAULT"],
     )
-    parser.add_argument("--batch-sizes", nargs="+", type=int, default=[8])
+    parser.add_argument("--batch-sizes", nargs="+", type=int, default=[1, 8])
     parser.add_argument("--input-tensor-name", type=str, default=None)
     parser.add_argument("--output-tensor-name", type=str, default=None)
     parser.add_argument("--save-quantized-graph-pb", action="store_true")

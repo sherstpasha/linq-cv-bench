@@ -5,6 +5,7 @@
 1. экспорт `FCN-ResNet50` из `torchvision` в `ONNX`
 2. квантование и компиляция в свой `.tpu`
 3. `accuracy` через собственный direct TPU runner с расчетом `pixel_accuracy` и `mean_iou`
+4. `performance` через `mlperf` на `batch 1` и `batch 8`
 
 Используемые пути:
 
@@ -16,11 +17,14 @@
 
 ## Что должно быть установлено отдельно
 
+## Что должно быть установлено отдельно
+
 - `pytpu`
 - `tpu_framework`
 - `tpu_compiler`
 - `torch`
 - `torchvision`
+- `mlperf`
 
 ## Один запуск под ключ
 
@@ -50,4 +54,16 @@ python scr/segmentation/build_fcn_resnet50_program.py
 
 ```bash
 python scr/segmentation/run_fcn_resnet50_accuracy.py
+```
+
+Считать performance через `mlperf`:
+
+```bash
+python scr/segmentation/run_fcn_resnet50_performance.py \
+  --mlperf-binary /path/to/mlperf \
+  --batch-size 1
+
+python scr/segmentation/run_fcn_resnet50_performance.py \
+  --mlperf-binary /path/to/mlperf \
+  --batch-size 8
 ```
