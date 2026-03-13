@@ -28,7 +28,7 @@
 ## Один запуск под ключ
 
 ```bash
-python /Users/user/tomsk/scr/classification/run_resnet50.py \
+python scr/classification/run_resnet50.py \
   --mlperf-binary /path/to/mlperf
 ```
 
@@ -50,33 +50,33 @@ python /Users/user/tomsk/scr/classification/run_resnet50.py \
 Экспортировать ONNX:
 
 ```bash
-python /Users/user/tomsk/scr/classification/export_resnet50_to_onnx.py
+python scr/classification/export_resnet50_to_onnx.py
 ```
 
 Собрать `.tpu`:
 
 ```bash
-python /Users/user/tomsk/scr/classification/build_resnet50_program.py \
-  --model-path /Users/user/tomsk/models/classification/resnet50.onnx
+python scr/classification/build_resnet50_program.py \
+  --model-path models/classification/resnet50.onnx
 ```
 
 Считать accuracy своим runner-ом:
 
 ```bash
-python /Users/user/tomsk/scr/classification/run_resnet50_accuracy.py \
-  --program-path /Users/user/tomsk/artifacts/classification/resnet50_b1.tpu \
-  --build-summary /Users/user/tomsk/artifacts/classification/build_summary.json \
-  --dataset-dir /Users/user/tomsk/data/evaluation/imagenet
+python scr/classification/run_resnet50_accuracy.py \
+  --program-path artifacts/classification/resnet50_b1.tpu \
+  --build-summary artifacts/classification/build_summary.json \
+  --dataset-dir data/evaluation/imagenet
 ```
 
 Считать performance через `mlperf`:
 
 ```bash
-python /Users/user/tomsk/scr/classification/run_resnet50_performance.py \
+python scr/classification/run_resnet50_performance.py \
   --mlperf-binary /path/to/mlperf \
   --batch-size 1
 
-python /Users/user/tomsk/scr/classification/run_resnet50_performance.py \
+python scr/classification/run_resnet50_performance.py \
   --mlperf-binary /path/to/mlperf \
   --batch-size 8
 ```

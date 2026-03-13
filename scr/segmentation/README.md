@@ -1,15 +1,53 @@
-# Segmentation (FCN-ResNet50)
+# segmentation
 
-Минимальный порядок запуска:
+Рабочий контур сегментации теперь один:
+
+1. экспорт `FCN-ResNet50` из `torchvision` в `ONNX`
+2. квантование и компиляция в свой `.tpu`
+3. `accuracy` через собственный direct TPU runner с расчетом `pixel_accuracy` и `mean_iou`
+
+Используемые пути:
+
+- `data/evaluation/VOCdevkit/VOC2012` - данные для accuracy
+- `data/calibration/VOCdevkit/VOC2012/JPEGImages` - данные для калибровки
+- `experiments/segmentation/fcn_resnet50.onnx` - экспортированный ONNX
+- `artifacts/segmentation` - `.qm`, `.tpu`, build metadata
+- `experiments/segmentation` - predictions, accuracy и итоговая сводка
+
+## Что должно быть установлено отдельно
+
+- `pytpu`
+- `tpu_framework`
+- `tpu_compiler`
+- `torch`
+- `torchvision`
+
+## Один запуск под ключ
+
+```bash
+python scr/segmentation/run_fcn_resnet50.py
+```
+
+Итоговая сводка:
+
+- `experiments/segmentation/results_summary.json`
+
+## Ручной порядок
+
+Экспортировать ONNX:
 
 ```bash
 python scr/segmentation/export_fcn_resnet50_to_onnx.py
-python scr/segmentation/infer_fcn_resnet50_onnx.py
-python scr/segmentation/metrics.py
 ```
 
-Полный H1 pipeline:
+Собрать `.tpu`:
 
 ```bash
-python scr/segmentation/run_full_h1_segmentation.py
+python scr/segmentation/build_fcn_resnet50_program.py
+```
+
+Считать accuracy своим runner-ом:
+
+```bash
+python scr/segmentation/run_fcn_resnet50_accuracy.py
 ```

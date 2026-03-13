@@ -23,12 +23,9 @@
   - `detection/metrics.py`
 - сегментация:
   - `segmentation/export_fcn_resnet50_to_onnx.py`
-  - `segmentation/infer_fcn_resnet50_onnx.py`
-  - `segmentation/quantize_fcn_resnet50_h1.py`
-  - `segmentation/compile_fcn_resnet50_h1.py`
-  - `segmentation/infer_fcn_resnet50_h1_tpu.py`
-  - `segmentation/metrics.py`
-  - `segmentation/run_full_h1_segmentation.py`
+  - `segmentation/build_fcn_resnet50_program.py`
+  - `segmentation/run_fcn_resnet50_accuracy.py`
+  - `segmentation/run_fcn_resnet50.py`
 
 ## Данные
 
