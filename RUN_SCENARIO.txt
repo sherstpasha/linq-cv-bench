@@ -150,6 +150,11 @@ Results:
 - /home/smallpc_user/linq-cv-bench/experiments/detection_tiny_yolo3_HP1M/accuracy_summary.json
 - /home/smallpc_user/linq-cv-bench/experiments/detection_tiny_yolo3_HP1M/performance/b8/summary.json
 
+Status note:
+- quality run is valid and should be used
+- current MLPerf performance run was INVALID at qps=400
+- do not treat detection vendor MLPerf throughput as final until rerun with a valid loadgen setting
+
 ==================================================
 3. ONNX CPU/CUDA BASELINES
 ==================================================
@@ -222,6 +227,7 @@ Results:
 
 This is the recommended CPU/GPU baseline for detection because it is closer to the vendor TPU contract.
 It uses pjreddie cfg/weights and exports raw heads.
+This first command prepares the strict ONNX model and runs the CPU baseline.
 
 source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python ~/linq-cv-bench/scr/detection/run_tiny_yolo3_onnx.py \
   --python ~/linq_cuda_venv/bin/python \
@@ -230,6 +236,7 @@ source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME
   --model-path ~/linq-cv-bench/models/detection/tiny_yolo3_strict.onnx \
   --cfg-path ~/linq-cv-bench/models/detection/yolov3-tiny.cfg \
   --weights-path ~/linq-cv-bench/models/detection/yolov3-tiny.weights \
+  --weights-url https://data.pjreddie.com/files/yolov3-tiny.weights \
   --img-dir ~/linq-cv-bench/data/evaluation/MSCOCO2017/val2017 \
   --ann-file ~/linq-cv-bench/data/evaluation/MSCOCO2017/annotations/instances_val2017.json \
   --provider cpu \
@@ -243,6 +250,8 @@ Results:
 3.6 Detection ONNX CUDA strict
 --------------------------------------------------
 
+This command reuses the already exported strict ONNX model.
+
 source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python ~/linq-cv-bench/scr/detection/run_tiny_yolo3_onnx.py \
   --python ~/linq_cuda_venv/bin/python \
   --export-python ~/linq_tf_export_venv/bin/python \
@@ -250,11 +259,11 @@ source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME
   --model-path ~/linq-cv-bench/models/detection/tiny_yolo3_strict.onnx \
   --cfg-path ~/linq-cv-bench/models/detection/yolov3-tiny.cfg \
   --weights-path ~/linq-cv-bench/models/detection/yolov3-tiny.weights \
+  --weights-url https://data.pjreddie.com/files/yolov3-tiny.weights \
   --img-dir ~/linq-cv-bench/data/evaluation/MSCOCO2017/val2017 \
   --ann-file ~/linq-cv-bench/data/evaluation/MSCOCO2017/annotations/instances_val2017.json \
   --provider cuda \
-  --experiments-dir ~/linq-cv-bench/experiments/detection_tiny_yolo3_strict_onnx_cuda \
-  --reexport-model
+  --experiments-dir ~/linq-cv-bench/experiments/detection_tiny_yolo3_strict_onnx_cuda
 
 Results:
 - /home/smallpc_user/linq-cv-bench/experiments/detection_tiny_yolo3_strict_onnx_cuda/results_summary.json
@@ -309,6 +318,10 @@ source ~/linq_venv311/bin/activate && python ~/linq-cv-bench/scr/classification/
 Results:
 - /home/smallpc_user/linq-cv-bench/experiments/classification_vendor_mlperf_HP1M/results_summary.json
 
+Status note:
+- do not run this on a CPU/GPU-only host
+- if /dev/tpu0 is missing, the run will fail immediately
+
 ==================================================
 5. FINAL STRUCTURE SUMMARY
 ==================================================
@@ -325,6 +338,19 @@ ONNX CPU/CUDA results:
 - segmentation CUDA: experiments/segmentation_onnx_cuda/results_summary.json
 - detection strict CPU: experiments/detection_tiny_yolo3_strict_onnx_cpu/results_summary.json
 - detection strict CUDA: experiments/detection_tiny_yolo3_strict_onnx_cuda/results_summary.json
+
+Current completion status:
+- done: classification TPU self-build
+- done: classification ONNX CPU
+- done: classification ONNX CUDA
+- done: segmentation TPU self-build
+- done: segmentation ONNX CPU
+- done: segmentation ONNX CUDA
+- done: detection TPU vendor quality
+- done: detection strict ONNX CPU
+- done: detection strict ONNX CUDA
+- optional and not completed on non-TPU host: classification vendor TPU comparison
+- needs rerun if final MLPerf number is required: detection vendor TPU performance
 
 ==================================================
 6. SOURCES OF DETECTION MODELS
