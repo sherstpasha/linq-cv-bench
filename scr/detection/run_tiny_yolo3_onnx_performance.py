@@ -6,9 +6,11 @@ from pathlib import Path
 from pycocotools.coco import COCO
 
 from onnx_runtime_utils import (
+    create_input_feed,
     create_session,
     infer_static_batch_size,
     infer_tiny_yolo3_contract,
+    load_optional_export_metadata,
     make_batch,
     preprocess_image,
 )
@@ -57,13 +59,12 @@ def main() -> None:
     if not img_ids:
         raise RuntimeError("No COCO images selected")
 
+    export_metadata = load_optional_export_metadata(args.model_path)
     session, resolved_provider = create_session(args.model_path, args.provider)
-    runtime_contract = infer_tiny_yolo3_contract(session, args.box_order)
+    runtime_contract = infer_tiny_yolo3_contract(session, export_metadata, args.box_order)
     effective_batch_size = infer_static_batch_size(runtime_contract, args.batch_size)
     warmup_batches = max(0, (args.warmup_images + effective_batch_size - 1) // effective_batch_size)
 
-    image_input_name = runtime_contract["image_input_name"]
-    image_shape_input_name = runtime_contract["image_shape_input_name"]
     batch_count = (len(img_ids) + effective_batch_size - 1) // effective_batch_size
     infer_time = 0.0
     measured_images = 0
@@ -79,13 +80,14 @@ def main() -> None:
             info = coco.loadImgs(image_id)[0]
             image_tensor, image_shape, _ = preprocess_image(args.img_dir / info["file_name"], runtime_contract)
             image_tensors.append(image_tensor)
-            image_shapes.append(image_shape)
+            if image_shape is not None:
+                image_shapes.append(image_shape)
 
         x_batch = make_batch(image_tensors, effective_batch_size)
-        shape_batch = make_batch(image_shapes, effective_batch_size)
+        shape_batch = make_batch(image_shapes, effective_batch_size) if image_shapes else None
 
         t0 = time.perf_counter()
-        session.run(None, {image_input_name: x_batch, image_shape_input_name: shape_batch})
+        session.run(None, create_input_feed(runtime_contract, x_batch, shape_batch))
         t1 = time.perf_counter()
 
         if batch_idx >= warmup_batches:

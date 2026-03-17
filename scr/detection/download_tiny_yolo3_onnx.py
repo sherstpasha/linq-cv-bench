@@ -28,6 +28,7 @@ def main() -> None:
 
     metadata = {
         "model_name": "tiny-yolov3-11",
+        "model_variant": "modelzoo_nms",
         "source_url": args.url,
         "source_page": DEFAULT_MODEL_PAGE,
         "input_layout": "nchw",

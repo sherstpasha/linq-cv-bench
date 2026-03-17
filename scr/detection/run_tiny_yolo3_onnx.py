@@ -3,19 +3,27 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 THIS_DIR = Path(__file__).resolve().parent
-DEFAULT_MODEL_URL = "https://huggingface.co/onnxmodelzoo/tiny-yolov3-11/resolve/main/tiny-yolov3-11.onnx"
+DEFAULT_MODELZOO_URL = "https://huggingface.co/onnxmodelzoo/tiny-yolov3-11/resolve/main/tiny-yolov3-11.onnx"
+DEFAULT_STRICT_CFG_URL = "https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3-tiny.cfg"
+DEFAULT_STRICT_WEIGHTS_URL = "https://pjreddie.com/media/files/yolov3-tiny.weights"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Tiny YOLOv3 ONNX accuracy and performance on CPU or CUDA")
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
-    parser.add_argument("--model-path", type=Path, default=REPO_ROOT / "models/detection/tiny-yolov3-11.onnx")
-    parser.add_argument("--download-url", type=str, default=DEFAULT_MODEL_URL)
+    parser.add_argument("--export-python", type=Path, default=None)
+    parser.add_argument("--model-source", choices=["modelzoo", "strict"], default="modelzoo")
+    parser.add_argument("--model-path", type=Path, default=None)
+    parser.add_argument("--download-url", type=str, default=DEFAULT_MODELZOO_URL)
+    parser.add_argument("--cfg-url", type=str, default=DEFAULT_STRICT_CFG_URL)
+    parser.add_argument("--weights-url", type=str, default=DEFAULT_STRICT_WEIGHTS_URL)
+    parser.add_argument("--cfg-path", type=Path, default=REPO_ROOT / "models/detection/yolov3-tiny.cfg")
+    parser.add_argument("--weights-path", type=Path, default=REPO_ROOT / "models/detection/yolov3-tiny.weights")
     parser.add_argument("--img-dir", type=Path, default=REPO_ROOT / "data/evaluation/MSCOCO2017/val2017")
     parser.add_argument(
         "--ann-file",
@@ -30,9 +38,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--performance-samples", type=int, default=500)
     parser.add_argument("--performance-warmup-images", type=int, default=10)
     parser.add_argument("--score-thres", type=float, default=0.001)
+    parser.add_argument("--iou-thres", type=float, default=0.45)
     parser.add_argument("--max-det", type=int, default=300)
     parser.add_argument("--box-order", choices=["yxyx", "xyxy"], default="yxyx")
-    parser.add_argument("--redownload-model", action="store_true")
+    parser.add_argument("--reexport-model", action="store_true")
     parser.add_argument(
         "--experiments-dir",
         type=Path,
@@ -53,26 +62,56 @@ def load_json(path: Path) -> Dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def resolve_model_path(args: argparse.Namespace) -> Path:
+    if args.model_path is not None:
+        return args.model_path
+    if args.model_source == "strict":
+        return REPO_ROOT / "models/detection/tiny_yolo3_strict.onnx"
+    return REPO_ROOT / "models/detection/tiny-yolov3-11.onnx"
+
+
 def main() -> None:
     args = parse_args()
     py = args.python.as_posix()
+    export_py = (args.export_python or args.python).as_posix()
+    model_path = resolve_model_path(args)
     args.experiments_dir.mkdir(parents=True, exist_ok=True)
-    args.model_path.parent.mkdir(parents=True, exist_ok=True)
+    model_path.parent.mkdir(parents=True, exist_ok=True)
     output_json = args.output_json or (args.experiments_dir / "results_summary.json")
 
-    download_cmd = None
-    if args.redownload_model or not args.model_path.exists():
-        download_cmd = [
-            py,
-            (THIS_DIR / "download_tiny_yolo3_onnx.py").as_posix(),
-            "--output",
-            args.model_path.as_posix(),
-            "--url",
-            args.download_url,
-        ]
-        if args.redownload_model:
-            download_cmd.append("--force")
-        run(download_cmd)
+    model_prepare_cmd: Optional[List[str]] = None
+    if args.reexport_model or not model_path.exists():
+        if args.model_source == "strict":
+            model_prepare_cmd = [
+                export_py,
+                (THIS_DIR / "export_tiny_yolo3_strict_to_onnx.py").as_posix(),
+                "--python",
+                export_py,
+                "--output",
+                model_path.as_posix(),
+                "--cfg-path",
+                args.cfg_path.as_posix(),
+                "--weights-path",
+                args.weights_path.as_posix(),
+                "--cfg-url",
+                args.cfg_url,
+                "--weights-url",
+                args.weights_url,
+            ]
+            if args.reexport_model:
+                model_prepare_cmd.append("--force-download")
+        else:
+            model_prepare_cmd = [
+                py,
+                (THIS_DIR / "download_tiny_yolo3_onnx.py").as_posix(),
+                "--output",
+                model_path.as_posix(),
+                "--url",
+                args.download_url,
+            ]
+            if args.reexport_model:
+                model_prepare_cmd.append("--force")
+        run(model_prepare_cmd)
 
     accuracy_summary = args.experiments_dir / "accuracy" / "summary.json"
     performance_summary = args.experiments_dir / "performance" / "b1" / "summary.json"
@@ -81,7 +120,7 @@ def main() -> None:
         py,
         (THIS_DIR / "run_tiny_yolo3_onnx_accuracy.py").as_posix(),
         "--model-path",
-        args.model_path.as_posix(),
+        model_path.as_posix(),
         "--img-dir",
         args.img_dir.as_posix(),
         "--ann-file",
@@ -96,6 +135,8 @@ def main() -> None:
         str(args.accuracy_warmup_images),
         "--score-thres",
         str(args.score_thres),
+        "--iou-thres",
+        str(args.iou_thres),
         "--max-det",
         str(args.max_det),
         "--box-order",
@@ -115,7 +156,7 @@ def main() -> None:
         py,
         (THIS_DIR / "run_tiny_yolo3_onnx_performance.py").as_posix(),
         "--model-path",
-        args.model_path.as_posix(),
+        model_path.as_posix(),
         "--img-dir",
         args.img_dir.as_posix(),
         "--ann-file",
@@ -137,15 +178,15 @@ def main() -> None:
 
     summary = {
         "pipeline": "tiny_yolo3_onnx",
-        "model_path": args.model_path.as_posix(),
-        "download_url": args.download_url,
+        "model_source": args.model_source,
+        "model_path": model_path.as_posix(),
         "img_dir": args.img_dir.as_posix(),
         "ann_file": args.ann_file.as_posix(),
         "provider": args.provider,
         "experiments_dir": args.experiments_dir.as_posix(),
-        "model_download": {
-            "command": download_cmd,
-            "executed": bool(download_cmd),
+        "model_prepare": {
+            "command": model_prepare_cmd,
+            "executed": bool(model_prepare_cmd),
         },
         "accuracy": {
             "command": accuracy_cmd,

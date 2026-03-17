@@ -19,6 +19,7 @@
   - `classification/run_resnet50_mlperf_vendor.py`
 - детекция:
   - `detection/download_tiny_yolo3_onnx.py`
+  - `detection/export_tiny_yolo3_strict_to_onnx.py`
   - `detection/onnx_runtime_utils.py`
   - `detection/run_tiny_yolo3_onnx_accuracy.py`
   - `detection/run_tiny_yolo3_onnx_performance.py`

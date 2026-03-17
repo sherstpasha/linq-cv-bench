@@ -1,25 +1,39 @@
 # detection
 
-Сейчас для `tiny_yolo3` есть два отдельных маршрута:
+Сейчас для `tiny_yolo3` есть три отдельных маршрута:
 
-1. `ONNX` baseline для `CPU/CUDA`
-2. vendor `TPU` программа
+1. `ONNX` baseline из `ONNX Model Zoo` для `CPU/CUDA`
+2. `ONNX strict` baseline из `pjreddie cfg/weights` в `keras`-совместимом raw-head виде
+3. vendor `TPU` программа
 
-## ONNX `tiny_yolo3`
+## ONNX `tiny_yolo3` from Model Zoo
 
-Для `CPU/CUDA` baseline используется готовый `tiny-yolov3-11.onnx` из `ONNX Model Zoo`.
-
-Один запуск под ключ:
+Для быстрого `CPU/CUDA` baseline используется готовый `tiny-yolov3-11.onnx` из `ONNX Model Zoo`.
 
 ```bash
 python /Users/user/tomsk/scr/detection/run_tiny_yolo3_onnx.py \
   --python /path/to/onnx_env/bin/python \
-  --provider cuda
+  --provider cuda \
+  --model-source modelzoo
 ```
 
-При первом запуске модель автоматически скачивается в:
+## ONNX `tiny_yolo3` strict
 
-- `models/detection/tiny-yolov3-11.onnx`
+Для более строгого сравнения с vendor `TPU` используется raw-head `tiny_yolo3`, собранный из:
+
+- `yolov3-tiny.cfg` от `pjreddie/darknet`
+- `yolov3-tiny.weights` от `pjreddie`
+
+Экспорт в `ONNX` требует отдельный `TensorFlow + tf2onnx` env.
+
+```bash
+python /Users/user/tomsk/scr/detection/run_tiny_yolo3_onnx.py \
+  --python /path/to/onnx_env/bin/python \
+  --export-python /path/to/tf_export_env/bin/python \
+  --provider cuda \
+  --model-source strict \
+  --reexport-model
+```
 
 Итоговый файл:
 
@@ -61,36 +75,24 @@ python /Users/user/tomsk/scr/detection/run_tiny_yolo3_vendor.py \
 - `input layout`: `NHWC`
 - `input range`: `float32` в диапазоне `0..1`
 
-Эти параметры уже стоят в дефолтах скриптов.
-
-Только quality:
-
-```bash
-python /Users/user/tomsk/scr/detection/run_tiny_yolo3_accuracy.py \
-  --program-path /path/to/linq_files/tpu_programs/tiny_yolo3_b8_o5_128x128_asic.tpu \
-  --img-dir /path/to/data/evaluation/MSCOCO2017/val2017 \
-  --ann-file /path/to/data/evaluation/MSCOCO2017/annotations/instances_val2017.json
-```
-
-Только performance:
-
-```bash
-python /Users/user/tomsk/scr/detection/run_tiny_yolo3_performance.py \
-  --mlperf-binary /path/to/mlperf \
-  --program-path /path/to/linq_files/tpu_programs/tiny_yolo3_b8_o5_128x128_asic.tpu
-```
-
-Если vendor TPU использует нестандартные имена тензоров:
-
-```bash
-  --input-tensor-name ... \
-  --output-tensor-name ...
-```
-
 ## Что должно быть установлено отдельно
+
+Для `ONNX CPU/CUDA`:
+
+- `onnxruntime` или `onnxruntime-gpu`
+- `pycocotools`
+- `torch`
+- `torchvision`
+
+Для strict export:
+
+- `tensorflow`
+- `tf2onnx`
+- `h5py`
+
+Для `TPU`:
 
 - `pytpu`
 - `tpu_framework`
 - `tpu_compiler`
-- `torch`
-- `torchvision`
+- `mlperf`

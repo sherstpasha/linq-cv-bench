@@ -3,7 +3,7 @@ import io
 import json
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -26,6 +26,17 @@ METRIC_KEYS = [
     "AR_medium",
     "AR_large",
 ]
+
+
+def load_json(path: Path) -> Dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_optional_export_metadata(model_path: Path) -> Dict[str, Any]:
+    metadata_path = model_path.with_suffix(".json")
+    if not metadata_path.exists():
+        return {}
+    return load_json(metadata_path)
 
 
 def ort_input_dtype_to_numpy(type_name: str) -> np.dtype[np.generic]:
@@ -91,42 +102,86 @@ def create_session(model_path: Path, provider: str) -> Tuple[ort.InferenceSessio
     return session, resolved_provider
 
 
-def infer_tiny_yolo3_contract(session: ort.InferenceSession, box_order: str, image_size: int = 416) -> Dict[str, Any]:
-    image_input = None
-    image_shape_input = None
-    for input_info in session.get_inputs():
-        shape = list(input_info.shape)
-        rank = len(shape)
-        if rank == 4 and image_input is None:
-            image_input = input_info
-        elif rank == 2 and image_shape_input is None:
-            image_shape_input = input_info
+def _infer_layout_from_shape(shape: Sequence[Any]) -> str:
+    if len(shape) != 4:
+        raise RuntimeError(f"Expected rank-4 image input, got shape={shape}")
+    if isinstance(shape[1], int) and shape[1] in (1, 3):
+        return "nchw"
+    if isinstance(shape[-1], int) and shape[-1] in (1, 3):
+        return "nhwc"
+    return "nhwc"
 
-    if image_input is None or image_shape_input is None:
+
+def _infer_image_size(shape: Sequence[Any], layout: str, fallback: int) -> int:
+    if len(shape) != 4:
+        return fallback
+    if layout == "nchw":
+        h = shape[2]
+        w = shape[3]
+    else:
+        h = shape[1]
+        w = shape[2]
+    if isinstance(h, int) and isinstance(w, int) and h > 0 and h == w:
+        return h
+    return fallback
+
+
+def infer_tiny_yolo3_contract(
+    session: ort.InferenceSession,
+    export_metadata: Dict[str, Any],
+    box_order: str,
+) -> Dict[str, Any]:
+    inputs = list(session.get_inputs())
+    outputs = list(session.get_outputs())
+    image_input = next((item for item in inputs if len(item.shape) == 4), None)
+    image_shape_input = next((item for item in inputs if len(item.shape) == 2), None)
+    if image_input is None:
         raise RuntimeError(
-            "Could not infer tiny_yolo3 inputs. "
-            f"inputs={[(item.name, list(item.shape), item.type) for item in session.get_inputs()]}"
+            "Could not infer tiny_yolo3 image input. "
+            f"inputs={[(item.name, list(item.shape), item.type) for item in inputs]}"
         )
 
-    output_names = [item.name for item in session.get_outputs()]
-    if len(output_names) < 3:
-        raise RuntimeError(f"Unexpected output count for tiny_yolo3: {output_names}")
+    image_layout = str(export_metadata.get("input_layout") or _infer_layout_from_shape(image_input.shape))
+    image_value_range = str(export_metadata.get("input_value_range") or "unit_float")
+    image_size = int(export_metadata.get("image_size") or _infer_image_size(image_input.shape, image_layout, 416))
+    static_batch_size = export_metadata.get("static_batch_size")
+    mode = str(export_metadata.get("model_variant") or "")
 
-    return {
+    if not mode:
+        if image_shape_input is not None and len(outputs) >= 3:
+            mode = "modelzoo_nms"
+        elif len(outputs) >= 2 and all(len(output.shape) == 4 for output in outputs[:2]):
+            mode = "yolo_heads"
+        else:
+            raise RuntimeError(
+                "Could not infer tiny_yolo3 model variant. "
+                f"inputs={[(item.name, list(item.shape), item.type) for item in inputs]} "
+                f"outputs={[(item.name, list(item.shape), item.type) for item in outputs]}"
+            )
+
+    contract = {
+        "mode": mode,
         "image_input_name": image_input.name,
         "image_input_dtype": ort_input_dtype_to_numpy(image_input.type).name,
         "image_input_shape": list(image_input.shape),
-        "image_input_layout": "nchw",
-        "image_input_value_range": "unit_float",
-        "image_color_order": "bgr",
-        "image_shape_input_name": image_shape_input.name,
-        "image_shape_input_dtype": ort_input_dtype_to_numpy(image_shape_input.type).name,
-        "image_shape_input_shape": list(image_shape_input.shape),
-        "output_names": output_names,
-        "box_order": box_order,
+        "image_input_layout": image_layout,
+        "image_input_value_range": image_value_range,
+        "image_color_order": str(export_metadata.get("input_color_order") or "bgr"),
+        "image_shape_input_name": image_shape_input.name if image_shape_input is not None else None,
+        "image_shape_input_dtype": (
+            ort_input_dtype_to_numpy(image_shape_input.type).name if image_shape_input is not None else None
+        ),
+        "image_shape_input_shape": list(image_shape_input.shape) if image_shape_input is not None else None,
+        "output_names": [item.name for item in outputs],
+        "box_order": str(export_metadata.get("box_order") or box_order),
         "image_size": image_size,
-        "static_batch_size": 1,
+        "static_batch_size": static_batch_size,
+        "num_classes": int(export_metadata.get("num_classes") or 80),
+        "anchors": export_metadata.get("anchors"),
+        "masks": export_metadata.get("masks"),
+        "preferred_output_name": export_metadata.get("output_name"),
     }
+    return contract
 
 
 def infer_static_batch_size(runtime_contract: Dict[str, Any], requested_batch_size: int) -> int:
@@ -146,29 +201,41 @@ def image_size_from_contract(runtime_contract: Dict[str, Any]) -> int:
     if isinstance(image_size, int) and image_size > 0:
         return image_size
     input_shape = runtime_contract["image_input_shape"]
-    if len(input_shape) != 4:
-        raise RuntimeError(f"Unexpected image input shape: {input_shape}")
-    height = input_shape[2]
-    width = input_shape[3]
-    if not isinstance(height, int) or not isinstance(width, int) or height != width:
-        raise RuntimeError(f"Expected static square input, got: {input_shape}")
-    return height
+    layout = runtime_contract["image_input_layout"]
+    return _infer_image_size(input_shape, layout, 416)
 
 
 def preprocess_image(
     image_path: Path,
     runtime_contract: Dict[str, Any],
-) -> Tuple[np.ndarray, np.ndarray, Dict[str, float]]:
+) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, float]]:
     img = cv2.imread(image_path.as_posix())
     if img is None:
         raise RuntimeError(f"Failed to read image: {image_path}")
     img_h, img_w = img.shape[:2]
     img_size = image_size_from_contract(runtime_contract)
     img_lb, scale, pad_x, pad_y = letterbox(img, img_size)
-    arr = img_lb.astype(np.float32) / 255.0
-    arr = np.transpose(arr, (2, 0, 1))
+    arr = img_lb.astype(np.float32)
+
+    if runtime_contract["image_value_range"] == "unit_float":
+        arr = arr / 255.0
+    elif runtime_contract["image_value_range"] != "uint8":
+        raise RuntimeError(f"Unsupported input value range: {runtime_contract['image_value_range']}")
+
+    if runtime_contract["image_input_layout"] == "nchw":
+        arr = np.transpose(arr, (2, 0, 1))
+    elif runtime_contract["image_input_layout"] != "nhwc":
+        raise RuntimeError(f"Unsupported input layout: {runtime_contract['image_input_layout']}")
+
     arr = arr.astype(np.dtype(runtime_contract["image_input_dtype"]), copy=False)
-    image_shape = np.array([img_h, img_w], dtype=np.dtype(runtime_contract["image_shape_input_dtype"]))
+
+    image_shape = None
+    if runtime_contract.get("image_shape_input_name"):
+        image_shape = np.array(
+            [img_h, img_w],
+            dtype=np.dtype(runtime_contract["image_shape_input_dtype"]),
+        )
+
     meta = {
         "img_h": float(img_h),
         "img_w": float(img_w),
@@ -189,6 +256,20 @@ def make_batch(tensors: Sequence[np.ndarray], batch_size: int) -> np.ndarray:
         return x[:batch_size]
     pad = np.repeat(x[-1:], repeats=batch_size - x.shape[0], axis=0)
     return np.concatenate([x, pad], axis=0)
+
+
+def create_input_feed(
+    runtime_contract: Dict[str, Any],
+    image_batch: np.ndarray,
+    image_shape_batch: Optional[np.ndarray] = None,
+) -> Dict[str, np.ndarray]:
+    feed = {runtime_contract["image_input_name"]: image_batch}
+    image_shape_input_name = runtime_contract.get("image_shape_input_name")
+    if image_shape_input_name:
+        if image_shape_batch is None:
+            raise RuntimeError("image_shape input is required for this model")
+        feed[str(image_shape_input_name)] = image_shape_batch
+    return feed
 
 
 def pick_output_map(session: ort.InferenceSession, values: Sequence[np.ndarray]) -> Dict[str, np.ndarray]:
@@ -223,7 +304,7 @@ def _normalize_indices(indices: np.ndarray) -> np.ndarray:
     return indices
 
 
-def decode_tiny_yolo3_outputs(
+def decode_tiny_yolo3_nms_outputs(
     output_map: Dict[str, np.ndarray],
     runtime_contract: Dict[str, Any],
     metas: List[Dict[str, float]],
@@ -282,6 +363,7 @@ def decode_tiny_yolo3_outputs(
         per_image_count[batch_index] += 1
 
     decode_probe = {
+        "mode": runtime_contract["mode"],
         "output_names": output_names,
         "output_shapes": {key: list(np.asarray(value).shape) for key, value in output_map.items()},
         "box_order": box_order,
@@ -318,7 +400,7 @@ def compute_coco_metrics(
     dt = coco.loadRes(predictions_path.as_posix())
     ev = COCOeval(coco, dt, "bbox")
     if limit > 0:
-        ev.params.imgIds = coco.getImgIds()[:limit]
+        ev.params.imgIds = coco.getImgIds()[: limit]
     ev.evaluate()
     ev.accumulate()
     summary_buffer = io.StringIO()

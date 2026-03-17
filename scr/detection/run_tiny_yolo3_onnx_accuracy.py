@@ -8,17 +8,22 @@ from pycocotools.coco import COCO
 
 from onnx_runtime_utils import (
     compute_coco_metrics,
+    create_input_feed,
     create_session,
-    decode_tiny_yolo3_outputs,
+    decode_tiny_yolo3_nms_outputs,
     infer_static_batch_size,
     infer_tiny_yolo3_contract,
+    load_optional_export_metadata,
     make_batch,
     pick_output_map,
     preprocess_image,
 )
+from run_tiny_yolo3_accuracy import decode_predictions, parse_anchors, parse_masks
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_ANCHORS = "10,14 23,27 37,58 81,82 135,169 344,319"
+DEFAULT_MASKS = "3,4,5|0,1,2"
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,8 +40,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=5000, help="0 means full COCO eval split")
     parser.add_argument("--warmup-images", type=int, default=10)
     parser.add_argument("--score-thres", type=float, default=0.001)
+    parser.add_argument("--iou-thres", type=float, default=0.45)
     parser.add_argument("--max-det", type=int, default=300)
     parser.add_argument("--box-order", choices=["yxyx", "xyxy"], default="yxyx")
+    parser.add_argument("--anchors", type=str, default=DEFAULT_ANCHORS)
+    parser.add_argument("--masks", type=str, default=DEFAULT_MASKS)
     parser.add_argument(
         "--predictions-out",
         type=Path,
@@ -77,13 +85,14 @@ def main() -> None:
     if not img_ids:
         raise RuntimeError("No COCO images selected")
 
+    export_metadata = load_optional_export_metadata(args.model_path)
     session, resolved_provider = create_session(args.model_path, args.provider)
-    runtime_contract = infer_tiny_yolo3_contract(session, args.box_order)
+    runtime_contract = infer_tiny_yolo3_contract(session, export_metadata, args.box_order)
     effective_batch_size = infer_static_batch_size(runtime_contract, args.batch_size)
     warmup_batches = max(0, (args.warmup_images + effective_batch_size - 1) // effective_batch_size)
 
-    image_input_name = runtime_contract["image_input_name"]
-    image_shape_input_name = runtime_contract["image_shape_input_name"]
+    anchors = parse_anchors(str(runtime_contract.get("anchors") or args.anchors))
+    masks = parse_masks(str(runtime_contract.get("masks") or args.masks))
     predictions: List[Dict[str, Any]] = []
     infer_time = 0.0
     measured_images = 0
@@ -103,22 +112,41 @@ def main() -> None:
             image_tensor, image_shape, meta = preprocess_image(args.img_dir / info["file_name"], runtime_contract)
             meta["image_id"] = int(image_id)
             image_tensors.append(image_tensor)
-            image_shapes.append(image_shape)
+            if image_shape is not None:
+                image_shapes.append(image_shape)
             metas.append(meta)
 
         x_batch = make_batch(image_tensors, effective_batch_size)
-        shape_batch = make_batch(image_shapes, effective_batch_size)
+        shape_batch = make_batch(image_shapes, effective_batch_size) if image_shapes else None
         t0 = time.perf_counter()
-        outputs = session.run(None, {image_input_name: x_batch, image_shape_input_name: shape_batch})
+        outputs = session.run(None, create_input_feed(runtime_contract, x_batch, shape_batch))
         t1 = time.perf_counter()
         output_map = pick_output_map(session, outputs)
-        batch_predictions, batch_probe = decode_tiny_yolo3_outputs(
-            output_map,
-            runtime_contract,
-            metas,
-            score_threshold=args.score_thres,
-            max_det=args.max_det,
-        )
+
+        if runtime_contract["mode"] == "modelzoo_nms":
+            batch_predictions, batch_probe = decode_tiny_yolo3_nms_outputs(
+                output_map,
+                runtime_contract,
+                metas,
+                score_threshold=args.score_thres,
+                max_det=args.max_det,
+            )
+        elif runtime_contract["mode"] == "yolo_heads":
+            batch_predictions, batch_probe = decode_predictions(
+                output_map,
+                runtime_contract.get("preferred_output_name"),
+                metas,
+                int(runtime_contract["image_size"]),
+                anchors,
+                masks,
+                int(runtime_contract.get("num_classes") or 80),
+                args.score_thres,
+                args.iou_thres,
+                args.max_det,
+            )
+        else:
+            raise RuntimeError(f"Unsupported tiny_yolo3 ONNX mode: {runtime_contract['mode']}")
+
         predictions.extend(batch_predictions)
         if decode_probe is None:
             decode_probe = batch_probe
@@ -148,6 +176,7 @@ def main() -> None:
         "warmup_images": args.warmup_images,
         "warmup_batches": warmup_batches,
         "score_threshold": args.score_thres,
+        "iou_threshold": args.iou_thres,
         "max_det": args.max_det,
         "measured_inference_sec": infer_time,
         "throughput_img_per_sec": throughput,
