@@ -12,7 +12,7 @@ from typing import Dict, List, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CFG_URL = "https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3-tiny.cfg"
-DEFAULT_WEIGHTS_URL = "https://pjreddie.com/media/files/yolov3-tiny.weights"
+DEFAULT_WEIGHTS_URL = "https://data.pjreddie.com/files/yolov3-tiny.weights"
 DEFAULT_ANCHORS = "10,14 23,27 37,58 81,82 135,169 344,319"
 DEFAULT_MASKS = "3,4,5|0,1,2"
 
@@ -59,9 +59,10 @@ def ensure_download(url: str, output_path: Path, force: bool) -> None:
     if output_path.exists() and not force:
         return
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    from urllib.request import urlopen
+    from urllib.request import Request, urlopen
 
-    with urlopen(url) as response, output_path.open("wb") as file:
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(request) as response, output_path.open("wb") as file:
         shutil.copyfileobj(response, file)
 
 

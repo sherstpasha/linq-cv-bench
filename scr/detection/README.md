@@ -22,7 +22,7 @@ python /Users/user/tomsk/scr/detection/run_tiny_yolo3_onnx.py \
 Для более строгого сравнения с vendor `TPU` используется raw-head `tiny_yolo3`, собранный из:
 
 - `yolov3-tiny.cfg` от `pjreddie/darknet`
-- `yolov3-tiny.weights` от `pjreddie`
+- `yolov3-tiny.weights` from `https://data.pjreddie.com/files/yolov3-tiny.weights`
 
 Экспорт в `ONNX` требует отдельный `TensorFlow + tf2onnx` env.
 

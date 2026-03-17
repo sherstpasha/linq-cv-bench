@@ -332,7 +332,7 @@ ONNX CPU/CUDA results:
 
 Strict detection path:
 - cfg: https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3-tiny.cfg
-- weights: https://pjreddie.com/media/files/yolov3-tiny.weights
+- weights: https://data.pjreddie.com/files/yolov3-tiny.weights
 - keras implementation used as reference for raw-head structure: https://github.com/qqwweee/keras-yolo3
 
 Quick fallback detection path:

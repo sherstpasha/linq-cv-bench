@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 THIS_DIR = Path(__file__).resolve().parent
 DEFAULT_MODELZOO_URL = "https://huggingface.co/onnxmodelzoo/tiny-yolov3-11/resolve/main/tiny-yolov3-11.onnx"
 DEFAULT_STRICT_CFG_URL = "https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3-tiny.cfg"
-DEFAULT_STRICT_WEIGHTS_URL = "https://pjreddie.com/media/files/yolov3-tiny.weights"
+DEFAULT_STRICT_WEIGHTS_URL = "https://data.pjreddie.com/files/yolov3-tiny.weights"
 
 
 def parse_args() -> argparse.Namespace:
