@@ -85,8 +85,29 @@ def resolve_provider(provider: str) -> str:
     raise RuntimeError(f"Unsupported provider: {provider}")
 
 
+def preload_cuda_runtime_if_needed(resolved_provider: str) -> None:
+    if resolved_provider != "CUDAExecutionProvider":
+        return
+    try:
+        # Prefer CUDA/cuDNN from pip-installed NVIDIA site packages to avoid
+        # mixing them with arbitrary system-wide CUDA installs.
+        ort.preload_dlls(directory="")
+        return
+    except Exception:
+        pass
+    try:
+        import torch  # type: ignore
+
+        _ = torch.cuda.is_available()
+    except Exception:
+        # Best-effort preload only. If CUDA libs are available system-wide,
+        # ONNX Runtime can still initialize without PyTorch.
+        return
+
+
 def create_session(model_path: Path, provider: str) -> Tuple[ort.InferenceSession, str]:
     resolved_provider = resolve_provider(provider)
+    preload_cuda_runtime_if_needed(resolved_provider)
     providers = [resolved_provider]
     if resolved_provider != "CPUExecutionProvider":
         providers.append("CPUExecutionProvider")
