@@ -1,8 +1,29 @@
 # detection
 
-Сейчас основной рабочий маршрут для детекции один:
+Сейчас для `tiny_yolo3` есть два отдельных маршрута:
 
-1. vendor `tiny_yolo3`
+1. `ONNX` baseline для `CPU/CUDA`
+2. vendor `TPU` программа
+
+## ONNX `tiny_yolo3`
+
+Для `CPU/CUDA` baseline используется готовый `tiny-yolov3-11.onnx` из `ONNX Model Zoo`.
+
+Один запуск под ключ:
+
+```bash
+python /Users/user/tomsk/scr/detection/run_tiny_yolo3_onnx.py \
+  --python /path/to/onnx_env/bin/python \
+  --provider cuda
+```
+
+При первом запуске модель автоматически скачивается в:
+
+- `models/detection/tiny-yolov3-11.onnx`
+
+Итоговый файл:
+
+- `experiments/detection/tiny_yolo3_onnx/results_summary.json`
 
 ## Vendor `tiny_yolo3`
 
