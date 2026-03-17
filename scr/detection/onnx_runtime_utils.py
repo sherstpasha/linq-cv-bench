@@ -217,10 +217,12 @@ def preprocess_image(
     img_lb, scale, pad_x, pad_y = letterbox(img, img_size)
     arr = img_lb.astype(np.float32)
 
-    if runtime_contract["image_value_range"] == "unit_float":
+    if runtime_contract["image_input_value_range"] == "unit_float":
         arr = arr / 255.0
-    elif runtime_contract["image_value_range"] != "uint8":
-        raise RuntimeError(f"Unsupported input value range: {runtime_contract['image_value_range']}")
+    elif runtime_contract["image_input_value_range"] != "uint8":
+        raise RuntimeError(
+            f"Unsupported input value range: {runtime_contract['image_input_value_range']}"
+        )
 
     if runtime_contract["image_input_layout"] == "nchw":
         arr = np.transpose(arr, (2, 0, 1))
