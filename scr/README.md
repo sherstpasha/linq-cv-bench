@@ -33,6 +33,10 @@
   - `segmentation/run_fcn_resnet50_accuracy.py`
   - `segmentation/run_fcn_resnet50_performance.py`
   - `segmentation/run_fcn_resnet50.py`
+  - `segmentation/onnx_runtime_utils.py`
+  - `segmentation/run_fcn_resnet50_onnx_accuracy.py`
+  - `segmentation/run_fcn_resnet50_onnx_performance.py`
+  - `segmentation/run_fcn_resnet50_onnx.py`
 
 ## Данные
 
