@@ -117,6 +117,15 @@ def infer_runtime_contract(
     }
 
 
+def infer_static_batch_size(runtime_contract: Dict[str, Any], requested_batch_size: int) -> int:
+    input_shape = runtime_contract.get("input_shape") or []
+    if input_shape:
+        first_dim = input_shape[0]
+        if isinstance(first_dim, int) and first_dim > 0:
+            return first_dim
+    return requested_batch_size
+
+
 def preprocess_image(
     image_path: Path,
     runtime_contract: Dict[str, Any],

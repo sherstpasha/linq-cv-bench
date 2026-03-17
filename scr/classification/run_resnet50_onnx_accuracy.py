@@ -8,6 +8,7 @@ import numpy as np
 
 from onnx_runtime_utils import (
     create_session,
+    infer_static_batch_size,
     infer_runtime_contract,
     load_optional_export_metadata,
     load_val_rows,
@@ -60,6 +61,7 @@ def main() -> None:
     export_metadata = load_optional_export_metadata(args.model_path)
     session, resolved_provider = create_session(args.model_path, args.provider)
     runtime_contract = infer_runtime_contract(session, export_metadata)
+    effective_batch_size = infer_static_batch_size(runtime_contract, args.batch_size)
 
     input_name = runtime_contract["input_name"]
     predictions: List[Dict[str, object]] = []
@@ -67,15 +69,15 @@ def main() -> None:
     good_top5 = 0
     infer_time = 0.0
     measured_images = 0
-    batch_count = (len(rows) + args.batch_size - 1) // args.batch_size
+    batch_count = (len(rows) + effective_batch_size - 1) // effective_batch_size
 
     for batch_idx in range(batch_count):
-        start = batch_idx * args.batch_size
-        end = min((batch_idx + 1) * args.batch_size, len(rows))
+        start = batch_idx * effective_batch_size
+        end = min((batch_idx + 1) * effective_batch_size, len(rows))
         batch_rows = rows[start:end]
 
         batch_tensors = [preprocess_image(args.dataset_dir / image_name, runtime_contract) for image_name, _ in batch_rows]
-        x_batch = make_batch(batch_tensors, args.batch_size)
+        x_batch = make_batch(batch_tensors, effective_batch_size)
 
         t0 = time.perf_counter()
         outputs = session.run(None, {input_name: x_batch})
@@ -127,7 +129,8 @@ def main() -> None:
         "provider_resolved": resolved_provider,
         "available_providers": session.get_providers(),
         "runtime_contract": runtime_contract,
-        "batch_size": args.batch_size,
+        "batch_size": effective_batch_size,
+        "requested_batch_size": args.batch_size,
         "requested_samples": args.samples,
         "effective_samples": total,
         "warmup_batches": args.warmup_batches,
