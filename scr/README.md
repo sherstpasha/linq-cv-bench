@@ -11,6 +11,10 @@
   - `classification/run_resnet50_accuracy.py`
   - `classification/run_resnet50_performance.py`
   - `classification/run_resnet50.py`
+  - `classification/onnx_runtime_utils.py`
+  - `classification/run_resnet50_onnx_accuracy.py`
+  - `classification/run_resnet50_onnx_performance.py`
+  - `classification/run_resnet50_onnx.py`
 - детекция:
   - `detection/run_tiny_yolo3_accuracy.py`
   - `detection/run_tiny_yolo3_performance.py`

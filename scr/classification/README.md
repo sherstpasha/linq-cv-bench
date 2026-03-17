@@ -1,11 +1,15 @@
 # classification
 
-Рабочий контур классификации теперь один:
+Рабочих контура классификации теперь два:
 
-1. экспорт `ResNet-50` из `torchvision` в `ONNX`
-2. квантование и компиляция в свой `.tpu`
-3. `accuracy` через собственный direct TPU runner
-4. `performance` через `mlperf` по `6.7`
+1. `TPU`:
+   - экспорт `ResNet-50` из `torchvision` в `ONNX`
+   - квантование и компиляция в свой `.tpu`
+   - `accuracy` через собственный direct TPU runner
+   - `performance` через `mlperf` по `6.7`
+2. `ONNX Runtime`:
+   - тот же `ONNX`
+   - `accuracy` и `performance` на `CPU` или `CUDA`
 
 Используемые пути:
 
@@ -15,6 +19,7 @@
 - `models/classification/resnet50.json` - metadata экспорта
 - `artifacts/classification` - `.qm`, `.tpu`, build metadata
 - `experiments/classification` - accuracy, performance и итоговая сводка
+- `experiments/classification_onnx` - ONNX CPU/CUDA accuracy, performance и итоговая сводка
 
 ## Что должно быть установлено отдельно
 
@@ -24,6 +29,11 @@
 - `tpu_compiler`
 - `torch`
 - `torchvision`
+- `onnxruntime`
+
+Для `CUDA` нужен отдельный runtime:
+
+- `onnxruntime-gpu`
 
 ## Один запуск под ключ
 
@@ -44,6 +54,38 @@ python scr/classification/run_resnet50.py \
 Итоговая сводка:
 
 - `experiments/classification/results_summary.json`
+
+## ONNX Runtime
+
+Один запуск под ключ:
+
+```bash
+python scr/classification/run_resnet50_onnx.py \
+  --provider auto
+```
+
+Что делает этот сценарий:
+
+- берет тот же `models/classification/resnet50.onnx`
+- считает `accuracy` на `CPU` или `CUDA`
+- считает `performance` для `batch 1` и `batch 8`
+- сохраняет сводку в:
+  - `experiments/classification_onnx/results_summary.json`
+
+Ручной порядок:
+
+```bash
+python scr/classification/run_resnet50_onnx_accuracy.py \
+  --provider cpu
+
+python scr/classification/run_resnet50_onnx_performance.py \
+  --provider cpu \
+  --batch-size 1
+
+python scr/classification/run_resnet50_onnx_performance.py \
+  --provider cpu \
+  --batch-size 8
+```
 
 ## Ручной порядок
 
@@ -91,3 +133,4 @@ python scr/classification/run_resnet50_performance.py \
   - `batch 8 -> q=1000`
   - `3` прогона и среднее по `VALID`
 - по умолчанию accuracy идет на весь `val_map.txt`; для быстрой проверки можно дать `--accuracy-samples 100` в `run_resnet50.py` или `--samples 100` в `run_resnet50_accuracy.py`
+- `run_resnet50_onnx.py` не использует `mlperf`; это отдельный CPU/CUDA baseline на том же `ONNX`
