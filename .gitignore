@@ -32,9 +32,14 @@ pip-wheel-metadata/
 *.json
 *.onnx
 *.pt
+*.weights
+*.h5
 
 # Data
 data/
 artifacts/
 experiments*/
 third_party/
+
+# Downloaded detection model assets
+models/detection/yolov3-tiny.cfg
