@@ -56,6 +56,17 @@ def load_json(path: Path) -> Dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def load_previous_stage(output_json: Path, stage_name: str) -> Dict:
+    if not output_json.exists():
+        return {}
+    try:
+        data = json.loads(output_json.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    stage = data.get(stage_name)
+    return stage if isinstance(stage, dict) else {}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run vendor tiny_yolo3: direct TPU quality on COCO + MLPerf performance")
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
@@ -100,6 +111,10 @@ def main() -> None:
     logs_dir = args.experiments_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     output_json = args.experiments_dir / "results_summary.json"
+    previous_accuracy = load_previous_stage(output_json, "accuracy")
+    previous_performance = load_previous_stage(output_json, "performance")
+    accuracy_summary_path = args.experiments_dir / "accuracy_summary.json"
+    performance_summary_path = args.experiments_dir / "performance" / f"b{args.batch_size}" / "summary.json"
 
     accuracy_cmd = None
     performance_cmd = None
@@ -175,14 +190,22 @@ def main() -> None:
         "ann_file": args.ann_file.as_posix(),
         "experiments_dir": args.experiments_dir.as_posix(),
         "accuracy": {
-            "command": accuracy_cmd,
-            "logs": accuracy_logs,
-            "summary": load_json(args.experiments_dir / "accuracy_summary.json") if not args.skip_accuracy else {"skipped": True},
+            "command": accuracy_cmd if accuracy_cmd is not None else previous_accuracy.get("command"),
+            "logs": accuracy_logs if accuracy_logs is not None else previous_accuracy.get("logs"),
+            "summary": (
+                load_json(accuracy_summary_path)
+                if accuracy_summary_path.exists()
+                else previous_accuracy.get("summary", {"skipped": True})
+            ),
         },
         "performance": {
-            "command": performance_cmd,
-            "logs": performance_logs,
-            "summary": load_json(args.experiments_dir / "performance" / f"b{args.batch_size}" / "summary.json") if not args.skip_performance else {"skipped": True},
+            "command": performance_cmd if performance_cmd is not None else previous_performance.get("command"),
+            "logs": performance_logs if performance_logs is not None else previous_performance.get("logs"),
+            "summary": (
+                load_json(performance_summary_path)
+                if performance_summary_path.exists()
+                else previous_performance.get("summary", {"skipped": True})
+            ),
         },
     }
     output_json.write_text(json.dumps(summary, indent=2), encoding="utf-8")
