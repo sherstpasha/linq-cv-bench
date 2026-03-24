@@ -40,6 +40,6 @@ data/
 artifacts/
 experiments*/
 third_party/
-
+POYASNITELNAYA_ZAPISKA_LinQ_RESULTS.md
 # Downloaded detection model assets
 models/detection/yolov3-tiny.cfg
