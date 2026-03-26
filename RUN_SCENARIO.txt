@@ -1,24 +1,25 @@
 RUN SCENARIO FOR TPU + ONNX CPU/CUDA
 
-Date: 2026-03-17
+Date: 2026-03-25
 Repo on server: /home/smallpc_user/linq-cv-bench
 
 ==================================================
 1. HOSTS AND ENVIRONMENTS
 ==================================================
 
-There are 3 separate Python environments in the final workflow.
+There are 3 Python environments in the final workflow.
 
-1. TPU/H1 environment
+1. TPU / H1 environment
    Path: /home/smallpc_user/linq_venv311
    Purpose:
    - self-build TPU classification
    - self-build TPU segmentation
+   - vendor TPU classification
    - vendor TPU detection
    - MLPerf runs for TPU
    Notes:
-   - this environment must have pytpu / tpu_framework / tpu_compiler / mlperf
-   - do not install ultralytics or random CUDA/GPU packages here
+   - this environment must have libtpu / tpu-dkms / pytpu / tpu_framework / mlperf
+   - do not mix it with CUDA-only packages
 
 2. ONNX CPU/CUDA environment
    Path: /home/smallpc_user/linq_cuda_venv
@@ -26,331 +27,309 @@ There are 3 separate Python environments in the final workflow.
    - ONNX CPU and CUDA baselines for classification
    - ONNX CPU and CUDA baselines for segmentation
    - ONNX CPU and CUDA baselines for detection
-   One-time setup:
-
-   python3 -m venv ~/linq_cuda_venv
-   source ~/linq_cuda_venv/bin/activate
-   python -m pip install --upgrade pip setuptools wheel
-   python -m pip install \
-     "numpy==1.26.4" \
-     "onnx~=1.16.0" \
-     "onnxruntime-gpu==1.24.2" \
-     "torch==2.10.0" \
-     "torchvision==0.25.0" \
-     "pycocotools==2.0.11" \
-     "opencv-python" \
-     "Pillow"
-
-   GPU sanity check:
-
-   source ~/linq_cuda_venv/bin/activate
-   unset LD_LIBRARY_PATH
-   unset CUDA_HOME
-   unset CUDA_PATH
-   python - <<'PY'
-   import torch
-   import onnxruntime as ort
-   print("torch:", torch.__version__)
-   print("torch cuda:", torch.cuda.is_available())
-   print("ort:", ort.__version__)
-   print("providers:", ort.get_available_providers())
-   PY
 
 3. Strict tiny_yolo3 export environment
    Path: /home/smallpc_user/linq_tf_export_venv
    Purpose:
-   - export strict tiny_yolo3 from pjreddie cfg/weights to ONNX
-   One-time setup:
+   - export the strict tiny_yolo3 ONNX model from pjreddie cfg/weights
 
-   python3 -m venv ~/linq_tf_export_venv
-   source ~/linq_tf_export_venv/bin/activate
-   python -m pip install --upgrade pip setuptools wheel
-   python -m pip install \
-     "numpy==1.26.4" \
-     "tensorflow==2.14.1" \
-     "tf2onnx~=1.16.1" \
-     "onnx~=1.16.0" \
-     "h5py"
-
-Important runtime note for CUDA runs:
-- for ONNX CPU/CUDA commands use:
+Important runtime note for ONNX CPU/CUDA runs:
+- always unset these variables before ONNX Runtime commands:
   unset LD_LIBRARY_PATH
   unset CUDA_HOME
   unset CUDA_PATH
-- this avoids mixing system CUDA libs with pip CUDA libs
 
 Important host note:
-- TPU sections below require a host with a real TPU device
-- if the current host has no TPU processor, skip TPU sections and run only ONNX CPU/CUDA sections
+- TPU sections below require a host with real TPU devices
+- if /dev/tpu0 is missing, skip TPU sections and run only ONNX CPU/CUDA sections
 
 ==================================================
-2. TPU RUNS FOR THE 3 TASKS
+2. COMMON VARIABLES
+==================================================
+
+export REPO=~/linq-cv-bench
+export TPU_PY=~/linq_venv311/bin/python
+export CUDA_PY=~/linq_cuda_venv/bin/python
+export TF_EXPORT_PY=~/linq_tf_export_venv/bin/python
+export MLPERF=/home/smallpc_user/mlperf_src/mlperf-16.16.12-Source/build/mlperf
+
+For TPU runs set:
+
+export SUFFIX=HP1M   # or HPD1M
+
+==================================================
+3. TPU RUNS
 ==================================================
 
 Final TPU plan:
-- classification: self-build ResNet-50
-- segmentation: self-build FCN-ResNet50
+- classification: self-build ResNet-50, presets O1 and O5
+- segmentation: self-build FCN-ResNet50, preset O1
 - detection: vendor tiny_yolo3 TPU program
+- vendor comparison: resnet50_mlperf
 
 --------------------------------------------------
-2.1 Classification TPU self-build
+3.1 Classification TPU self-build (O1)
 --------------------------------------------------
 
-source ~/linq_venv311/bin/activate && python ~/linq-cv-bench/scr/classification/run_resnet50.py \
-  --python ~/linq_venv311/bin/python \
-  --mlperf-binary /home/smallpc_user/mlperf_src/mlperf-16.16.12-Source/build/mlperf \
-  --model-path ~/linq-cv-bench/models/classification/resnet50_HP1M.onnx \
-  --calibration-dir ~/linq-cv-bench/data/calibration/imagenet \
-  --evaluation-dir ~/linq-cv-bench/data/evaluation/imagenet \
-  --artifacts-dir ~/linq-cv-bench/artifacts/classification_HP1M \
-  --experiments-dir ~/linq-cv-bench/experiments/classification_HP1M \
+source ~/linq_venv311/bin/activate && python $REPO/scr/classification/run_resnet50.py \
+  --python $TPU_PY \
+  --mlperf-binary $MLPERF \
+  --model-path $REPO/models/classification/resnet50_${SUFFIX}.onnx \
+  --calibration-dir $REPO/data/calibration/imagenet \
+  --evaluation-dir $REPO/data/evaluation/imagenet \
+  --artifacts-dir $REPO/artifacts/classification_${SUFFIX} \
+  --experiments-dir $REPO/experiments/classification_${SUFFIX} \
   --reexport-model \
   --accuracy-samples 5000
 
 Results:
-- /home/smallpc_user/linq-cv-bench/experiments/classification_HP1M/results_summary.json
-- /home/smallpc_user/linq-cv-bench/experiments/classification_HP1M/accuracy/summary.json
-- /home/smallpc_user/linq-cv-bench/experiments/classification_HP1M/performance/b1/summary.json
-- /home/smallpc_user/linq-cv-bench/experiments/classification_HP1M/performance/b8/summary.json
+- $REPO/experiments/classification_${SUFFIX}/results_summary.json
+- $REPO/experiments/classification_${SUFFIX}/accuracy/summary.json
+- $REPO/experiments/classification_${SUFFIX}/performance/b1/summary.json
+- $REPO/experiments/classification_${SUFFIX}/performance/b8/summary.json
 
 --------------------------------------------------
-2.2 Segmentation TPU self-build
+3.2 Classification TPU self-build (O5)
 --------------------------------------------------
 
-source ~/linq_venv311/bin/activate && python ~/linq-cv-bench/scr/segmentation/run_fcn_resnet50.py \
-  --python ~/linq_venv311/bin/python \
-  --mlperf-binary /home/smallpc_user/mlperf_src/mlperf-16.16.12-Source/build/mlperf \
-  --model-path ~/linq-cv-bench/experiments/segmentation_HP1M/fcn_resnet50.onnx \
-  --calibration-dir ~/linq-cv-bench/data/calibration/VOCdevkit/VOC2012/JPEGImages \
-  --voc-root ~/linq-cv-bench/data/evaluation/VOCdevkit/VOC2012 \
-  --artifacts-dir ~/linq-cv-bench/artifacts/segmentation_HP1M \
-  --experiments-dir ~/linq-cv-bench/experiments/segmentation_HP1M
+source ~/linq_venv311/bin/activate && python $REPO/scr/classification/run_resnet50.py \
+  --python $TPU_PY \
+  --mlperf-binary $MLPERF \
+  --model-path $REPO/models/classification/resnet50_${SUFFIX}_O5.onnx \
+  --calibration-dir $REPO/data/calibration/imagenet \
+  --evaluation-dir $REPO/data/evaluation/imagenet \
+  --artifacts-dir $REPO/artifacts/classification_${SUFFIX}_O5 \
+  --experiments-dir $REPO/experiments/classification_${SUFFIX}_O5 \
+  --compile-preset O5 \
+  --reexport-model \
+  --accuracy-samples 5000
 
 Results:
-- /home/smallpc_user/linq-cv-bench/experiments/segmentation_HP1M/results_summary.json
-- /home/smallpc_user/linq-cv-bench/experiments/segmentation_HP1M/accuracy/summary.json
-- /home/smallpc_user/linq-cv-bench/experiments/segmentation_HP1M/performance/b1/summary.json
-- /home/smallpc_user/linq-cv-bench/experiments/segmentation_HP1M/performance/b8/summary.json
+- $REPO/experiments/classification_${SUFFIX}_O5/results_summary.json
+- $REPO/experiments/classification_${SUFFIX}_O5/accuracy/summary.json
+- $REPO/experiments/classification_${SUFFIX}_O5/performance/b1/summary.json
+- $REPO/experiments/classification_${SUFFIX}_O5/performance/b8/summary.json
 
 --------------------------------------------------
-2.3 Detection TPU vendor tiny_yolo3
+3.3 Segmentation TPU self-build (O1)
 --------------------------------------------------
 
-source ~/linq_venv311/bin/activate && python ~/linq-cv-bench/scr/detection/run_tiny_yolo3_vendor.py \
-  --python ~/linq_venv311/bin/python \
-  --mlperf-binary /home/smallpc_user/mlperf_src/mlperf-16.16.12-Source/build/mlperf \
+source ~/linq_venv311/bin/activate && python $REPO/scr/segmentation/run_fcn_resnet50.py \
+  --python $TPU_PY \
+  --mlperf-binary $MLPERF \
+  --model-path $REPO/experiments/segmentation_${SUFFIX}/fcn_resnet50.onnx \
+  --calibration-dir $REPO/data/calibration/VOCdevkit/VOC2012/JPEGImages \
+  --voc-root $REPO/data/evaluation/VOCdevkit/VOC2012 \
+  --artifacts-dir $REPO/artifacts/segmentation_${SUFFIX} \
+  --experiments-dir $REPO/experiments/segmentation_${SUFFIX}
+
+Results:
+- $REPO/experiments/segmentation_${SUFFIX}/results_summary.json
+- $REPO/experiments/segmentation_${SUFFIX}/accuracy/summary.json
+- $REPO/experiments/segmentation_${SUFFIX}/performance/b1/summary.json
+- $REPO/experiments/segmentation_${SUFFIX}/performance/b8/summary.json
+
+Status note:
+- self-build segmentation with preset O5 was attempted
+- in the current pipeline it did not produce a final reproducible result
+- do not treat segmentation O5 as part of the final result set
+
+--------------------------------------------------
+3.4 Detection TPU vendor tiny_yolo3
+--------------------------------------------------
+
+source ~/linq_venv311/bin/activate && python $REPO/scr/detection/run_tiny_yolo3_vendor.py \
+  --python $TPU_PY \
+  --mlperf-binary $MLPERF \
   --program-path /home/smallpc_user/linq_files/tpu_programs/tiny_yolo3_b8_o5_128x128_asic.tpu \
-  --img-dir ~/linq-cv-bench/data/evaluation/MSCOCO2017/val2017 \
-  --ann-file ~/linq-cv-bench/data/evaluation/MSCOCO2017/annotations/instances_val2017.json \
-  --experiments-dir ~/linq-cv-bench/experiments/detection_tiny_yolo3_HP1M \
+  --img-dir $REPO/data/evaluation/MSCOCO2017/val2017 \
+  --ann-file $REPO/data/evaluation/MSCOCO2017/annotations/instances_val2017.json \
+  --experiments-dir $REPO/experiments/detection_tiny_yolo3_${SUFFIX} \
+  --qps 2000 \
+  --runs 3 \
   --limit 5000
 
 Results:
-- /home/smallpc_user/linq-cv-bench/experiments/detection_tiny_yolo3_HP1M/results_summary.json
-- /home/smallpc_user/linq-cv-bench/experiments/detection_tiny_yolo3_HP1M/accuracy_summary.json
-- /home/smallpc_user/linq-cv-bench/experiments/detection_tiny_yolo3_HP1M/performance/b8/summary.json
+- $REPO/experiments/detection_tiny_yolo3_${SUFFIX}/results_summary.json
+- $REPO/experiments/detection_tiny_yolo3_${SUFFIX}/accuracy_summary.json
+- $REPO/experiments/detection_tiny_yolo3_${SUFFIX}/performance/b8/summary.json
 
 Status note:
-- quality run is valid and should be used
-- current MLPerf performance run was INVALID at qps=400
-- do not treat detection vendor MLPerf throughput as final until rerun with a valid loadgen setting
-
-==================================================
-3. ONNX CPU/CUDA BASELINES
-==================================================
+- this is the final valid TPU detection path
+- MLPerf performance is expected to be VALID with qps=2000
 
 --------------------------------------------------
-3.1 Classification ONNX CPU
+3.5 Vendor classification comparison: resnet50_mlperf
 --------------------------------------------------
 
-source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python ~/linq-cv-bench/scr/classification/run_resnet50_onnx.py \
-  --python ~/linq_cuda_venv/bin/python \
-  --model-path ~/linq-cv-bench/models/classification/resnet50.onnx \
-  --evaluation-dir ~/linq-cv-bench/data/evaluation/imagenet \
-  --provider cpu \
-  --accuracy-samples 5000 \
-  --experiments-dir ~/linq-cv-bench/experiments/classification_onnx_cpu \
-  --reexport-model
-
-Results:
-- /home/smallpc_user/linq-cv-bench/experiments/classification_onnx_cpu/results_summary.json
-
---------------------------------------------------
-3.2 Classification ONNX CUDA
---------------------------------------------------
-
-source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python ~/linq-cv-bench/scr/classification/run_resnet50_onnx.py \
-  --python ~/linq_cuda_venv/bin/python \
-  --model-path ~/linq-cv-bench/models/classification/resnet50.onnx \
-  --evaluation-dir ~/linq-cv-bench/data/evaluation/imagenet \
-  --provider cuda \
-  --accuracy-samples 5000 \
-  --experiments-dir ~/linq-cv-bench/experiments/classification_onnx_cuda \
-  --reexport-model
-
-Results:
-- /home/smallpc_user/linq-cv-bench/experiments/classification_onnx_cuda/results_summary.json
-
---------------------------------------------------
-3.3 Segmentation ONNX CPU
---------------------------------------------------
-
-source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python ~/linq-cv-bench/scr/segmentation/run_fcn_resnet50_onnx.py \
-  --python ~/linq_cuda_venv/bin/python \
-  --model-path ~/linq-cv-bench/experiments/segmentation_HP1M/fcn_resnet50.onnx \
-  --voc-root ~/linq-cv-bench/data/evaluation/VOCdevkit/VOC2012 \
-  --provider cpu \
-  --experiments-dir ~/linq-cv-bench/experiments/segmentation_onnx_cpu \
-  --reexport-model
-
-Results:
-- /home/smallpc_user/linq-cv-bench/experiments/segmentation_onnx_cpu/results_summary.json
-
---------------------------------------------------
-3.4 Segmentation ONNX CUDA
---------------------------------------------------
-
-source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python ~/linq-cv-bench/scr/segmentation/run_fcn_resnet50_onnx.py \
-  --python ~/linq_cuda_venv/bin/python \
-  --model-path ~/linq-cv-bench/experiments/segmentation_HP1M/fcn_resnet50.onnx \
-  --voc-root ~/linq-cv-bench/data/evaluation/VOCdevkit/VOC2012 \
-  --provider cuda \
-  --experiments-dir ~/linq-cv-bench/experiments/segmentation_onnx_cuda \
-  --reexport-model
-
-Results:
-- /home/smallpc_user/linq-cv-bench/experiments/segmentation_onnx_cuda/results_summary.json
-
---------------------------------------------------
-3.5 Detection ONNX CPU strict
---------------------------------------------------
-
-This is the recommended CPU/GPU baseline for detection because it is closer to the vendor TPU contract.
-It uses pjreddie cfg/weights and exports raw heads.
-This first command prepares the strict ONNX model and runs the CPU baseline.
-
-source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python ~/linq-cv-bench/scr/detection/run_tiny_yolo3_onnx.py \
-  --python ~/linq_cuda_venv/bin/python \
-  --export-python ~/linq_tf_export_venv/bin/python \
-  --model-source strict \
-  --model-path ~/linq-cv-bench/models/detection/tiny_yolo3_strict.onnx \
-  --cfg-path ~/linq-cv-bench/models/detection/yolov3-tiny.cfg \
-  --weights-path ~/linq-cv-bench/models/detection/yolov3-tiny.weights \
-  --weights-url https://data.pjreddie.com/files/yolov3-tiny.weights \
-  --img-dir ~/linq-cv-bench/data/evaluation/MSCOCO2017/val2017 \
-  --ann-file ~/linq-cv-bench/data/evaluation/MSCOCO2017/annotations/instances_val2017.json \
-  --provider cpu \
-  --experiments-dir ~/linq-cv-bench/experiments/detection_tiny_yolo3_strict_onnx_cpu \
-  --reexport-model
-
-Results:
-- /home/smallpc_user/linq-cv-bench/experiments/detection_tiny_yolo3_strict_onnx_cpu/results_summary.json
-
---------------------------------------------------
-3.6 Detection ONNX CUDA strict
---------------------------------------------------
-
-This command reuses the already exported strict ONNX model.
-
-source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python ~/linq-cv-bench/scr/detection/run_tiny_yolo3_onnx.py \
-  --python ~/linq_cuda_venv/bin/python \
-  --export-python ~/linq_tf_export_venv/bin/python \
-  --model-source strict \
-  --model-path ~/linq-cv-bench/models/detection/tiny_yolo3_strict.onnx \
-  --cfg-path ~/linq-cv-bench/models/detection/yolov3-tiny.cfg \
-  --weights-path ~/linq-cv-bench/models/detection/yolov3-tiny.weights \
-  --weights-url https://data.pjreddie.com/files/yolov3-tiny.weights \
-  --img-dir ~/linq-cv-bench/data/evaluation/MSCOCO2017/val2017 \
-  --ann-file ~/linq-cv-bench/data/evaluation/MSCOCO2017/annotations/instances_val2017.json \
-  --provider cuda \
-  --experiments-dir ~/linq-cv-bench/experiments/detection_tiny_yolo3_strict_onnx_cuda
-
-Results:
-- /home/smallpc_user/linq-cv-bench/experiments/detection_tiny_yolo3_strict_onnx_cuda/results_summary.json
-
---------------------------------------------------
-3.7 Detection ONNX quick fallback from Model Zoo
---------------------------------------------------
-
-Use this only as a quick fallback baseline if strict export fails.
-This path is less strict than the pjreddie + raw-head route.
-
-CPU:
-
-source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python ~/linq-cv-bench/scr/detection/run_tiny_yolo3_onnx.py \
-  --python ~/linq_cuda_venv/bin/python \
-  --model-source modelzoo \
-  --model-path ~/linq-cv-bench/models/detection/tiny-yolov3-11.onnx \
-  --img-dir ~/linq-cv-bench/data/evaluation/MSCOCO2017/val2017 \
-  --ann-file ~/linq-cv-bench/data/evaluation/MSCOCO2017/annotations/instances_val2017.json \
-  --provider cpu \
-  --experiments-dir ~/linq-cv-bench/experiments/detection_tiny_yolo3_onnx_cpu \
-  --reexport-model
-
-CUDA:
-
-source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python ~/linq-cv-bench/scr/detection/run_tiny_yolo3_onnx.py \
-  --python ~/linq_cuda_venv/bin/python \
-  --model-source modelzoo \
-  --model-path ~/linq-cv-bench/models/detection/tiny-yolov3-11.onnx \
-  --img-dir ~/linq-cv-bench/data/evaluation/MSCOCO2017/val2017 \
-  --ann-file ~/linq-cv-bench/data/evaluation/MSCOCO2017/annotations/instances_val2017.json \
-  --provider cuda \
-  --experiments-dir ~/linq-cv-bench/experiments/detection_tiny_yolo3_onnx_cuda \
-  --reexport-model
-
-==================================================
-4. OPTIONAL EXTRA COMPARISON
-==================================================
-
-Optional vendor classification comparison.
-This requires a TPU host.
-
-source ~/linq_venv311/bin/activate && python ~/linq-cv-bench/scr/classification/run_resnet50_mlperf_vendor.py \
-  --python ~/linq_venv311/bin/python \
-  --mlperf-binary /home/smallpc_user/mlperf_src/mlperf-16.16.12-Source/build/mlperf \
+source ~/linq_venv311/bin/activate && python $REPO/scr/classification/run_resnet50_mlperf_vendor.py \
+  --python $TPU_PY \
+  --mlperf-binary $MLPERF \
   --program-b1 /home/smallpc_user/linq_files/tpu_programs/resnet50_mlperf_b1_o5_128x128_asic.tpu \
   --program-b8 /home/smallpc_user/linq_files/tpu_programs/resnet50_mlperf_b8_o5_128x128_asic.tpu \
-  --dataset-dir ~/linq-cv-bench/data/evaluation/imagenet \
+  --dataset-dir $REPO/data/evaluation/imagenet \
   --accuracy-samples 5000 \
-  --experiments-dir ~/linq-cv-bench/experiments/classification_vendor_mlperf_HP1M
+  --experiments-dir $REPO/experiments/classification_vendor_mlperf_${SUFFIX}
 
 Results:
-- /home/smallpc_user/linq-cv-bench/experiments/classification_vendor_mlperf_HP1M/results_summary.json
+- $REPO/experiments/classification_vendor_mlperf_${SUFFIX}/results_summary.json
 
-Status note:
-- do not run this on a CPU/GPU-only host
-- if /dev/tpu0 is missing, the run will fail immediately
+==================================================
+4. ONNX CPU/CUDA BASELINES
+==================================================
+
+--------------------------------------------------
+4.1 Classification ONNX CPU
+--------------------------------------------------
+
+source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python $REPO/scr/classification/run_resnet50_onnx.py \
+  --python $CUDA_PY \
+  --model-path $REPO/models/classification/resnet50.onnx \
+  --evaluation-dir $REPO/data/evaluation/imagenet \
+  --provider cpu \
+  --accuracy-samples 5000 \
+  --experiments-dir $REPO/experiments/classification_onnx_cpu \
+  --reexport-model
+
+--------------------------------------------------
+4.2 Classification ONNX CUDA
+--------------------------------------------------
+
+source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python $REPO/scr/classification/run_resnet50_onnx.py \
+  --python $CUDA_PY \
+  --model-path $REPO/models/classification/resnet50.onnx \
+  --evaluation-dir $REPO/data/evaluation/imagenet \
+  --provider cuda \
+  --accuracy-samples 5000 \
+  --experiments-dir $REPO/experiments/classification_onnx_cuda \
+  --reexport-model
+
+--------------------------------------------------
+4.3 Segmentation ONNX CPU
+--------------------------------------------------
+
+source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python $REPO/scr/segmentation/run_fcn_resnet50_onnx.py \
+  --python $CUDA_PY \
+  --model-path $REPO/experiments/segmentation_HP1M/fcn_resnet50.onnx \
+  --voc-root $REPO/data/evaluation/VOCdevkit/VOC2012 \
+  --provider cpu \
+  --experiments-dir $REPO/experiments/segmentation_onnx_cpu \
+  --reexport-model
+
+--------------------------------------------------
+4.4 Segmentation ONNX CUDA
+--------------------------------------------------
+
+source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python $REPO/scr/segmentation/run_fcn_resnet50_onnx.py \
+  --python $CUDA_PY \
+  --model-path $REPO/experiments/segmentation_HP1M/fcn_resnet50.onnx \
+  --voc-root $REPO/data/evaluation/VOCdevkit/VOC2012 \
+  --provider cuda \
+  --experiments-dir $REPO/experiments/segmentation_onnx_cuda \
+  --reexport-model
+
+--------------------------------------------------
+4.5 Detection ONNX CPU strict
+--------------------------------------------------
+
+source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python $REPO/scr/detection/run_tiny_yolo3_onnx.py \
+  --python $CUDA_PY \
+  --export-python $TF_EXPORT_PY \
+  --model-source strict \
+  --model-path $REPO/models/detection/tiny_yolo3_strict.onnx \
+  --cfg-path $REPO/models/detection/yolov3-tiny.cfg \
+  --weights-path $REPO/models/detection/yolov3-tiny.weights \
+  --weights-url https://data.pjreddie.com/files/yolov3-tiny.weights \
+  --img-dir $REPO/data/evaluation/MSCOCO2017/val2017 \
+  --ann-file $REPO/data/evaluation/MSCOCO2017/annotations/instances_val2017.json \
+  --provider cpu \
+  --experiments-dir $REPO/experiments/detection_tiny_yolo3_strict_onnx_cpu \
+  --reexport-model
+
+--------------------------------------------------
+4.6 Detection ONNX CUDA strict
+--------------------------------------------------
+
+source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python $REPO/scr/detection/run_tiny_yolo3_onnx.py \
+  --python $CUDA_PY \
+  --export-python $TF_EXPORT_PY \
+  --model-source strict \
+  --model-path $REPO/models/detection/tiny_yolo3_strict.onnx \
+  --cfg-path $REPO/models/detection/yolov3-tiny.cfg \
+  --weights-path $REPO/models/detection/yolov3-tiny.weights \
+  --weights-url https://data.pjreddie.com/files/yolov3-tiny.weights \
+  --img-dir $REPO/data/evaluation/MSCOCO2017/val2017 \
+  --ann-file $REPO/data/evaluation/MSCOCO2017/annotations/instances_val2017.json \
+  --provider cuda \
+  --experiments-dir $REPO/experiments/detection_tiny_yolo3_strict_onnx_cuda
+
+Results for ONNX baselines:
+- $REPO/experiments/classification_onnx_cpu/results_summary.json
+- $REPO/experiments/classification_onnx_cuda/results_summary.json
+- $REPO/experiments/segmentation_onnx_cpu/results_summary.json
+- $REPO/experiments/segmentation_onnx_cuda/results_summary.json
+- $REPO/experiments/detection_tiny_yolo3_strict_onnx_cpu/results_summary.json
+- $REPO/experiments/detection_tiny_yolo3_strict_onnx_cuda/results_summary.json
+
+--------------------------------------------------
+4.7 Detection ONNX quick fallback from Model Zoo
+--------------------------------------------------
+
+Use this only as an auxiliary fallback if strict export fails.
+This path is not part of the final comparison set.
+
+CUDA example:
+
+source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python $REPO/scr/detection/run_tiny_yolo3_onnx.py \
+  --python $CUDA_PY \
+  --model-source modelzoo \
+  --model-path $REPO/models/detection/tiny-yolov3-11.onnx \
+  --img-dir $REPO/data/evaluation/MSCOCO2017/val2017 \
+  --ann-file $REPO/data/evaluation/MSCOCO2017/annotations/instances_val2017.json \
+  --provider cuda \
+  --experiments-dir $REPO/experiments/detection_tiny_yolo3_onnx_cuda \
+  --reexport-model
 
 ==================================================
 5. FINAL STRUCTURE SUMMARY
 ==================================================
 
 TPU main results:
-- classification self-build TPU: experiments/classification_HP1M/results_summary.json
-- segmentation self-build TPU: experiments/segmentation_HP1M/results_summary.json
-- detection vendor TPU: experiments/detection_tiny_yolo3_HP1M/results_summary.json
+- experiments/classification_HP1M/results_summary.json
+- experiments/classification_HP1M_O5/results_summary.json
+- experiments/classification_HPD1M/results_summary.json
+- experiments/classification_HPD1M_O5/results_summary.json
+- experiments/segmentation_HP1M/results_summary.json
+- experiments/segmentation_HPD1M/results_summary.json
+- experiments/detection_tiny_yolo3_HP1M/results_summary.json
+- experiments/detection_tiny_yolo3_HPD1M/results_summary.json
+- experiments/classification_vendor_mlperf_HP1M/results_summary.json
+- experiments/classification_vendor_mlperf_HPD1M/results_summary.json
 
-ONNX CPU/CUDA results:
-- classification CPU: experiments/classification_onnx_cpu/results_summary.json
-- classification CUDA: experiments/classification_onnx_cuda/results_summary.json
-- segmentation CPU: experiments/segmentation_onnx_cpu/results_summary.json
-- segmentation CUDA: experiments/segmentation_onnx_cuda/results_summary.json
-- detection strict CPU: experiments/detection_tiny_yolo3_strict_onnx_cpu/results_summary.json
-- detection strict CUDA: experiments/detection_tiny_yolo3_strict_onnx_cuda/results_summary.json
+ONNX main results:
+- experiments/classification_onnx_cpu/results_summary.json
+- experiments/classification_onnx_cuda/results_summary.json
+- experiments/segmentation_onnx_cpu/results_summary.json
+- experiments/segmentation_onnx_cuda/results_summary.json
+- experiments/detection_tiny_yolo3_strict_onnx_cpu/results_summary.json
+- experiments/detection_tiny_yolo3_strict_onnx_cuda/results_summary.json
+
+Auxiliary / reference results not required for the final table set:
+- experiments/classification_vendor_mlperf_HP1M_O5_REF/results_summary.json
+- experiments/detection_tiny_yolo3_HP1M_VALID/results_summary.json
+- experiments/detection_tiny_yolo3_onnx_cuda/results_summary.json
 
 Current completion status:
-- done: classification TPU self-build
-- done: classification ONNX CPU
-- done: classification ONNX CUDA
-- done: segmentation TPU self-build
-- done: segmentation ONNX CPU
-- done: segmentation ONNX CUDA
-- done: detection TPU vendor quality
-- done: detection strict ONNX CPU
-- done: detection strict ONNX CUDA
-- optional and not completed on non-TPU host: classification vendor TPU comparison
-- needs rerun if final MLPerf number is required: detection vendor TPU performance
+- done: classification TPU self-build O1 for HP1M and HPD1M
+- done: classification TPU self-build O5 for HP1M and HPD1M
+- done: classification TPU vendor comparison for HP1M and HPD1M
+- done: segmentation TPU self-build O1 for HP1M and HPD1M
+- not finalized: segmentation TPU self-build O5
+- done: detection TPU vendor for HP1M and HPD1M
+- done: classification ONNX CPU and CUDA
+- done: segmentation ONNX CPU and CUDA
+- done: detection strict ONNX CPU and CUDA
+- auxiliary only: detection ONNX Model Zoo fallback
 
 ==================================================
 6. SOURCES OF DETECTION MODELS

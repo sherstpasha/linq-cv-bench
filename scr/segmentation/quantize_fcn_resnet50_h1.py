@@ -27,6 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--percentile", type=float, default=100.0)
     parser.add_argument("--batch-axis", type=int, default=0)
     parser.add_argument("--save-quantized-graph-pb", type=Path, default=None, help="Optional .pb output from quantized model")
+    parser.add_argument("--verbose", action="store_true", help="Print extended graph diagnostics")
     return parser.parse_args()
 
 
@@ -169,7 +170,15 @@ def unique(items: List[str]) -> List[str]:
     return out
 
 
-def print_graph_diagnostics(graph_def: Any) -> None:
+def verbose_print(enabled: bool, message: str) -> None:
+    if enabled:
+        print(message)
+
+
+def print_graph_diagnostics(graph_def: Any, enabled: bool) -> None:
+    if not enabled:
+        return
+
     import tensorflow as tf  # type: ignore
 
     node_names = [n.name for n in graph_def.node]
@@ -243,7 +252,7 @@ def main() -> None:
 
     converted_graph, mapping = load_converted_graph(onnx_model)
     graph_def = to_graph_def(converted_graph)
-    print_graph_diagnostics(graph_def)
+    print_graph_diagnostics(graph_def, enabled=args.verbose)
 
     mapped_input = map_tensor_name(onnx_input_name, mapping)
     mapped_output = map_tensor_name(onnx_output_name, mapping)
@@ -257,9 +266,9 @@ def main() -> None:
         tmp_dir=args.output_qm.parent,
     )
     calibration_dict = {mapped_input: calib_tensor}
-    print(f"Calibration tensor: {mapped_input} shape={tuple(calib_tensor.shape)}")
-    print(f"ONNX input/output: {onnx_input_name} -> {onnx_output_name}")
-    print(f"Mapped input/output: {mapped_input} -> {mapped_output}")
+    verbose_print(args.verbose, f"Calibration tensor: {mapped_input} shape={tuple(calib_tensor.shape)}")
+    verbose_print(args.verbose, f"ONNX input/output: {onnx_input_name} -> {onnx_output_name}")
+    verbose_print(args.verbose, f"Mapped input/output: {mapped_input} -> {mapped_output}")
 
     try:
         input_shapes = {mapped_input: (1, 3, args.height, args.width)}
@@ -294,7 +303,7 @@ def main() -> None:
         if regular_model is None:
             raise RuntimeError(f"Could not initialize RegularModel with outputs: {output_candidates}") from last_error
 
-        print(f"Output node (RegularModel): {selected_output}")
+        verbose_print(args.verbose, f"Output node (RegularModel): {selected_output}")
 
         try:
             thresholds = regular_model.calibrate(calibration_data=calibration_dict, percentile=args.percentile)
@@ -316,7 +325,7 @@ def main() -> None:
     finally:
         try:
             memmap_path.unlink(missing_ok=True)
-            print(f"Removed calibration tensor: {memmap_path}")
+            verbose_print(args.verbose, f"Removed calibration tensor: {memmap_path}")
         except Exception:
             pass
 
