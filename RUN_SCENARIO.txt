@@ -342,3 +342,46 @@ Strict detection path:
 
 Quick fallback detection path:
 - https://huggingface.co/onnxmodelzoo/tiny-yolov3-11
+
+==================================================
+7. APPENDIX: CLASSIFICATION ONNX CUDA ON RTX 3060
+==================================================
+
+Use this appendix when classification must be rerun on a new server with `NVIDIA GeForce RTX 3060`.
+Do not overwrite the old CUDA baseline directory from the previous GPU.
+
+Recommended variables:
+
+export CUDA_GPU_LABEL=rtx3060
+export CUDA_VISIBLE_DEVICES=0   # replace 0 with the actual RTX 3060 GPU index if needed
+
+Recommended output directory:
+
+- $REPO/experiments/classification_onnx_cuda_${CUDA_GPU_LABEL}
+
+Before the run, save GPU identification into the same results directory:
+
+mkdir -p $REPO/experiments/classification_onnx_cuda_${CUDA_GPU_LABEL}
+nvidia-smi -L > $REPO/experiments/classification_onnx_cuda_${CUDA_GPU_LABEL}/gpu_info.txt
+nvidia-smi > $REPO/experiments/classification_onnx_cuda_${CUDA_GPU_LABEL}/nvidia_smi_full.txt
+
+Classification ONNX CUDA on RTX 3060:
+
+source ~/linq_cuda_venv/bin/activate && unset LD_LIBRARY_PATH && unset CUDA_HOME && unset CUDA_PATH && python $REPO/scr/classification/run_resnet50_onnx.py \
+  --python $CUDA_PY \
+  --model-path $REPO/models/classification/resnet50.onnx \
+  --evaluation-dir $REPO/data/evaluation/imagenet \
+  --provider cuda \
+  --accuracy-samples 5000 \
+  --experiments-dir $REPO/experiments/classification_onnx_cuda_${CUDA_GPU_LABEL}
+
+Results to keep:
+- $REPO/experiments/classification_onnx_cuda_${CUDA_GPU_LABEL}/results_summary.json
+- $REPO/experiments/classification_onnx_cuda_${CUDA_GPU_LABEL}/accuracy/summary.json
+- $REPO/experiments/classification_onnx_cuda_${CUDA_GPU_LABEL}/performance/b1/summary.json
+- $REPO/experiments/classification_onnx_cuda_${CUDA_GPU_LABEL}/performance/b8/summary.json
+- $REPO/experiments/classification_onnx_cuda_${CUDA_GPU_LABEL}/gpu_info.txt
+- $REPO/experiments/classification_onnx_cuda_${CUDA_GPU_LABEL}/nvidia_smi_full.txt
+
+If the exported ONNX files must be rebuilt on this host, add:
+- `--reexport-model`
