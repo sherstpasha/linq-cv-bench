@@ -33,6 +33,21 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / "artifacts/classification_HPD1M_O5/build_summary.json",
     )
+    parser.add_argument("--model-path", type=Path, default=None, help="Optional ONNX path for auto-build")
+    parser.add_argument(
+        "--calibration-dir",
+        type=Path,
+        default=REPO_ROOT / "data/calibration/imagenet",
+        help="Calibration image directory for auto-build",
+    )
+    parser.add_argument("--model-name", type=str, default=None, help="Artifact name prefix for auto-build")
+    parser.add_argument(
+        "--compile-preset",
+        type=str,
+        default=None,
+        choices=["O1", "O5", "DEFAULT"],
+        help="Compile preset for auto-build; inferred from paths if omitted",
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -76,6 +91,97 @@ def detect_available_devices(explicit_devices: Sequence[str] | None) -> List[str
     if not devices:
         raise RuntimeError("TPU device not found (Device.list_devices() is empty)")
     return devices
+
+
+def infer_model_name(program_path: Path, explicit_model_name: str | None) -> str:
+    if explicit_model_name:
+        return explicit_model_name
+    stem = program_path.stem
+    if "_b" in stem:
+        return stem.split("_b", 1)[0]
+    return stem
+
+
+def infer_compile_preset(
+    explicit_compile_preset: str | None,
+    program_path: Path,
+    build_summary: Path,
+    model_path: Path | None,
+) -> str:
+    if explicit_compile_preset:
+        return explicit_compile_preset
+    haystacks = [
+        program_path.as_posix().upper(),
+        build_summary.as_posix().upper(),
+        model_path.as_posix().upper() if model_path is not None else "",
+    ]
+    return "O5" if any("_O5" in item or "/O5" in item for item in haystacks) else "O1"
+
+
+def infer_model_path(explicit_model_path: Path | None, build_summary: Path, program_path: Path) -> Path:
+    if explicit_model_path is not None:
+        return explicit_model_path
+
+    artifacts_dir_name = program_path.parent.name
+    model_name = infer_model_name(program_path, None)
+    candidates = [
+        REPO_ROOT / "models/classification" / f"{artifacts_dir_name.replace('classification_', model_name + '_')}.onnx",
+        REPO_ROOT / "models/classification" / f"{model_name}_{artifacts_dir_name.split('classification_', 1)[-1]}.onnx",
+        REPO_ROOT / "models/classification" / f"{model_name}.onnx",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+def ensure_build_artifacts(
+    py: str,
+    program_path: Path,
+    build_summary: Path,
+    model_path: Path,
+    calibration_dir: Path,
+    model_name: str,
+    compile_preset: str,
+) -> List[str] | None:
+    if program_path.exists() and build_summary.exists():
+        return None
+    if not model_path.exists():
+        raise FileNotFoundError(
+            f"TPU program/build summary missing, and model for auto-build not found: {model_path}"
+        )
+    if not calibration_dir.exists():
+        raise FileNotFoundError(
+            f"TPU program/build summary missing, and calibration dir for auto-build not found: {calibration_dir}"
+        )
+
+    artifacts_dir = program_path.parent
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        py,
+        (THIS_DIR / "build_resnet50_program.py").as_posix(),
+        "--model-path",
+        model_path.as_posix(),
+        "--calibration-dir",
+        calibration_dir.as_posix(),
+        "--artifacts-dir",
+        artifacts_dir.as_posix(),
+        "--model-name",
+        model_name,
+        "--compile-preset",
+        compile_preset,
+        "--batch-sizes",
+        "1",
+        "--metadata-out",
+        build_summary.as_posix(),
+    ]
+    print("$", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+    if not program_path.exists():
+        raise FileNotFoundError(f"Auto-build completed without producing TPU program: {program_path}")
+    if not build_summary.exists():
+        raise FileNotFoundError(f"Auto-build completed without producing build summary: {build_summary}")
+    return cmd
 
 
 def write_shards(rows: Sequence[Tuple[str, int]], out_dir: Path, shard_count: int) -> List[Path]:
@@ -214,18 +320,27 @@ def main() -> None:
     args = parse_args()
     py = args.python.as_posix()
 
-    if not args.program_path.exists():
-        raise FileNotFoundError(f"TPU program not found: {args.program_path}")
     if not args.dataset_dir.exists():
         raise FileNotFoundError(f"Dataset dir not found: {args.dataset_dir}")
-    if not args.build_summary.exists():
-        raise FileNotFoundError(f"Build summary not found: {args.build_summary}")
     if args.repeats <= 0:
         raise RuntimeError("--repeats must be > 0")
 
     val_map = args.val_map or (args.dataset_dir / "val_map.txt")
     if not val_map.exists():
         raise FileNotFoundError(f"val_map.txt not found: {val_map}")
+
+    model_name = infer_model_name(args.program_path, args.model_name)
+    model_path = infer_model_path(args.model_path, args.build_summary, args.program_path)
+    compile_preset = infer_compile_preset(args.compile_preset, args.program_path, args.build_summary, model_path)
+    auto_build_cmd = ensure_build_artifacts(
+        py=py,
+        program_path=args.program_path,
+        build_summary=args.build_summary,
+        model_path=model_path,
+        calibration_dir=args.calibration_dir,
+        model_name=model_name,
+        compile_preset=compile_preset,
+    )
 
     devices = detect_available_devices(args.devices)
     scales = args.scales or list(range(1, len(devices) + 1))
@@ -271,9 +386,17 @@ def main() -> None:
     final_summary = {
         "pipeline": "resnet50_parallel_direct",
         "program_path": args.program_path.as_posix(),
+        "model_path": model_path.as_posix(),
+        "model_name": model_name,
+        "compile_preset": compile_preset,
+        "calibration_dir": args.calibration_dir.as_posix(),
         "dataset_dir": args.dataset_dir.as_posix(),
         "val_map": val_map.as_posix(),
         "build_summary": args.build_summary.as_posix(),
+        "auto_build": {
+            "executed": auto_build_cmd is not None,
+            "command": auto_build_cmd,
+        },
         "requested_samples": args.samples,
         "effective_samples": len(rows),
         "available_devices": devices,
