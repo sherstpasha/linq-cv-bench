@@ -29,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--model-name", type=str, default="resnet50")
     parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--devices", nargs="*", default=None, help="Explicit TPU device files for mlperf, e.g. /dev/tpu0")
     parser.add_argument(
         "--qps",
         type=int,
@@ -97,6 +98,8 @@ def main() -> None:
             "-q",
             str(effective_qps),
         ]
+        if args.devices:
+            cmd.extend(["--dev", *args.devices])
         process = subprocess.run(cmd, cwd=run_dir, capture_output=True, text=True)
         (run_dir / "mlperf_stdout.txt").write_text(process.stdout, encoding="utf-8")
         (run_dir / "mlperf_stderr.txt").write_text(process.stderr, encoding="utf-8")
@@ -126,6 +129,7 @@ def main() -> None:
         "batch_size": args.batch_size,
         "requested_qps": args.qps,
         "effective_qps": effective_qps,
+        "devices": list(args.devices) if args.devices else None,
         "runs_requested": args.runs,
         "all_valid": all_valid,
         "valid_run_count": len(valid_samples),

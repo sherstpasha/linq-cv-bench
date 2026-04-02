@@ -14,7 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Exploratory parallel MLPerf performance run for ResNet-50 across multiple TPU devices"
+        description="Run parallel MLPerf performance for ResNet-50 across multiple TPU devices"
     )
     parser.add_argument("--mlperf-binary", type=str, default="mlperf")
     parser.add_argument(
@@ -248,7 +248,7 @@ def main() -> None:
 
     output_json = args.output_json or (args.output_dir / "results_summary.json")
     final_summary = {
-        "pipeline": "resnet50_parallel_mlperf_explore",
+        "pipeline": "resnet50_parallel_mlperf",
         "program_path": args.program_path.as_posix(),
         "batch_size": args.batch_size,
         "requested_qps_per_process": args.qps,
@@ -258,8 +258,7 @@ def main() -> None:
         "scales": scales,
         "results": results,
         "note": (
-            "If devices are provided, each mlperf process is started with explicit '--dev <device>'. "
-            "Observed device assignment is additionally inferred from /proc/<pid>/fd while processes are running."
+            "Each mlperf process is started with explicit --dev <device> when devices are provided. Observed device assignment is additionally inferred from /proc/<pid>/fd while processes are running."
         ),
     }
     output_json.write_text(json.dumps(final_summary, indent=2), encoding="utf-8")
