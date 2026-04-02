@@ -50,6 +50,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=0, help="0 means infer from .tpu filename/build summary")
     parser.add_argument("--samples", type=int, default=0, help="0 means all rows from val_map.txt")
     parser.add_argument("--warmup-batches", type=int, default=3)
+    parser.add_argument("--device", type=str, default=None, help="Explicit TPU device, e.g. /dev/tpu0")
     return parser.parse_args()
 
 
@@ -295,7 +296,12 @@ def main() -> None:
     devices = tpu.Device.list_devices()
     if not devices:
         raise RuntimeError("TPU device not found (Device.list_devices() is empty)")
-    device_id = devices[0]
+    if args.device is not None:
+        if args.device not in devices:
+            raise RuntimeError(f"Requested device {args.device} is not available. Available devices: {devices}")
+        device_id = args.device
+    else:
+        device_id = devices[0]
 
     infer_time = 0.0
     measured_images = 0
