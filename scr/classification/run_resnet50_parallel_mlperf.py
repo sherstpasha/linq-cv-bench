@@ -56,7 +56,13 @@ def snapshot_open_tpu_devices(pid: int) -> List[str]:
     if not fd_root.exists():
         return []
     seen: Set[str] = set()
-    for fd_path in fd_root.iterdir():
+    try:
+        iterator = list(fd_root.iterdir())
+    except PermissionError:
+        return []
+    except OSError:
+        return []
+    for fd_path in iterator:
         try:
             target = fd_path.resolve(strict=True)
         except Exception:

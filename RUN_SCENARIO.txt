@@ -385,3 +385,107 @@ Results to keep:
 
 If the exported ONNX files must be rebuilt on this host, add:
 - `--reexport-model`
+
+==================================================
+8. APPENDIX: HPD1M PARALLEL CLASSIFICATION
+==================================================
+
+Use this appendix to measure parallel scaling of `HPD1M` across `1/2/3/4` TPU devices.
+These commands assume the current repository already contains:
+- `scr/classification/run_resnet50_parallel_direct.py`
+- `scr/classification/run_resnet50_parallel_mlperf.py`
+- `scr/classification/run_resnet50_accuracy.py` with `--device` support
+
+The four TPU devices detected on the server were:
+- `/dev/tpu3`
+- `/dev/tpu2`
+- `/dev/tpu1`
+- `/dev/tpu0`
+
+--------------------------------------------------
+8.1 Direct throughput, batch 1
+--------------------------------------------------
+
+source ~/linq_venv311/bin/activate && python $REPO/scr/classification/run_resnet50_parallel_direct.py \
+  --python $TPU_PY \
+  --program-path $REPO/artifacts/classification_HPD1M_O5/resnet50_b1.tpu \
+  --build-summary $REPO/artifacts/classification_HPD1M_O5/build_summary.json \
+  --dataset-dir $REPO/data/evaluation/imagenet \
+  --output-dir $REPO/experiments/classification_HPD1M_O5_parallel_direct_b1 \
+  --devices /dev/tpu3 /dev/tpu2 /dev/tpu1 /dev/tpu0 \
+  --scales 1 2 3 4 \
+  --repeats 3
+
+--------------------------------------------------
+8.2 Direct throughput, batch 8
+--------------------------------------------------
+
+source ~/linq_venv311/bin/activate && python $REPO/scr/classification/run_resnet50_parallel_direct.py \
+  --python $TPU_PY \
+  --program-path $REPO/artifacts/classification_HPD1M_O5/resnet50_b8.tpu \
+  --build-summary $REPO/artifacts/classification_HPD1M_O5/build_summary.json \
+  --dataset-dir $REPO/data/evaluation/imagenet \
+  --output-dir $REPO/experiments/classification_HPD1M_O5_parallel_direct_b8 \
+  --devices /dev/tpu3 /dev/tpu2 /dev/tpu1 /dev/tpu0 \
+  --scales 1 2 3 4 \
+  --repeats 3
+
+--------------------------------------------------
+8.3 MLPerf performance, batch 1
+--------------------------------------------------
+
+source ~/linq_venv311/bin/activate && python $REPO/scr/classification/run_resnet50_parallel_mlperf.py \
+  --mlperf-binary $MLPERF \
+  --program-path $REPO/artifacts/classification_HPD1M_O5/resnet50_b1.tpu \
+  --batch-size 1 \
+  --devices /dev/tpu3 /dev/tpu2 /dev/tpu1 /dev/tpu0 \
+  --scales 1 2 3 4 \
+  --repeats 3 \
+  --output-dir $REPO/experiments/classification_HPD1M_O5_parallel_mlperf_b1_pinned
+
+--------------------------------------------------
+8.4 MLPerf performance, batch 8
+--------------------------------------------------
+
+source ~/linq_venv311/bin/activate && python $REPO/scr/classification/run_resnet50_parallel_mlperf.py \
+  --mlperf-binary $MLPERF \
+  --program-path $REPO/artifacts/classification_HPD1M_O5/resnet50_b8.tpu \
+  --batch-size 8 \
+  --devices /dev/tpu3 /dev/tpu2 /dev/tpu1 /dev/tpu0 \
+  --scales 1 2 3 4 \
+  --repeats 3 \
+  --output-dir $REPO/experiments/classification_HPD1M_O5_parallel_mlperf_b8_pinned
+
+--------------------------------------------------
+8.5 Vendor MLPerf performance, batch 1
+--------------------------------------------------
+
+source ~/linq_venv311/bin/activate && python $REPO/scr/classification/run_resnet50_parallel_mlperf.py \
+  --mlperf-binary $MLPERF \
+  --program-path /home/smallpc_user/linq_files/tpu_programs/resnet50_mlperf_b1_o5_128x128_asic.tpu \
+  --batch-size 1 \
+  --devices /dev/tpu3 /dev/tpu2 /dev/tpu1 /dev/tpu0 \
+  --scales 1 2 3 4 \
+  --repeats 3 \
+  --output-dir $REPO/experiments/classification_vendor_mlperf_HPD1M_parallel_b1_pinned
+
+--------------------------------------------------
+8.6 Vendor MLPerf performance, batch 8
+--------------------------------------------------
+
+source ~/linq_venv311/bin/activate && python $REPO/scr/classification/run_resnet50_parallel_mlperf.py \
+  --mlperf-binary $MLPERF \
+  --program-path /home/smallpc_user/linq_files/tpu_programs/resnet50_mlperf_b8_o5_128x128_asic.tpu \
+  --batch-size 8 \
+  --devices /dev/tpu3 /dev/tpu2 /dev/tpu1 /dev/tpu0 \
+  --scales 1 2 3 4 \
+  --repeats 3 \
+  --output-dir $REPO/experiments/classification_vendor_mlperf_HPD1M_parallel_b8_pinned
+
+Results to keep:
+- `$REPO/experiments/classification_HPD1M_O5_parallel_direct_b1/results_summary.json`
+- `$REPO/experiments/classification_HPD1M_O5_parallel_direct_b8/results_summary.json`
+- `$REPO/experiments/classification_HPD1M_O5_parallel_mlperf_b1_pinned/results_summary.json`
+- `$REPO/experiments/classification_HPD1M_O5_parallel_mlperf_b8_pinned/results_summary.json`
+- `$REPO/experiments/classification_vendor_mlperf_HPD1M_parallel_b1_pinned/results_summary.json`
+- `$REPO/experiments/classification_vendor_mlperf_HPD1M_parallel_b8_pinned/results_summary.json`
